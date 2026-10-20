@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
+from typing import Literal
 import os
 import jwt
 from fastapi import FastAPI, Depends, HTTPException, Header, status
@@ -11,7 +12,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .db import Base,engine,get_db,SessionLocal
-from .models import User, Trip, Product, PointTransaction, Redemption, Settlement, OutboxEvent, utcnow
+from .models import User, Trip, Product, PointTransaction, Redemption, Settlement, OutboxEvent, SupportTicket, SupportMessage, utcnow
+from .assistant_service import configuration, query_model
 from .security import create_token, decode_token, hash_password,verify_password
 from .services import BusinessError, submit_trip,redeem,process_pending,stats,serial_user,serial_trip,serial_product,serial_redemption,calculate,MODES
 
@@ -35,6 +37,26 @@ class ProductIn(BaseModel):
     stock: int=Field(ge=0,le=100000)
 class FulfillIn(BaseModel):
     status: str=Field(pattern='^(FULFILLED)$')
+
+# Support-center and AI request schemas: strongly validated at the API edge.
+class TicketCreateIn(BaseModel):
+    category: Literal['积分问题', '行程问题', '兑换订单', '账号帮助', '其他']
+    subject: str=Field(min_length=4,max_length=100)
+    content: str=Field(min_length=5,max_length=2000)
+
+class TicketMessageIn(BaseModel):
+    content: str=Field(min_length=1,max_length=2000)
+
+class TicketStatusIn(BaseModel):
+    status: Literal['OPEN', 'IN_PROGRESS', 'RESOLVED']
+
+class ChatTurn(BaseModel):
+    role: Literal['user','assistant']
+    content: str=Field(min_length=1,max_length=1500)
+
+class AssistantChatIn(BaseModel):
+    message: str=Field(min_length=1,max_length=1500)
+    history: list[ChatTurn]=Field(default_factory=list,max_length=8)
 
 def _seed(db):
     if db.scalar(select(func.count()).select_from(User)):
@@ -65,7 +87,7 @@ async def lifespan(app:FastAPI):
         process_pending(db)
     yield
 
-app=FastAPI(title='城市绿色出行积分系统',description='碳减排模拟、积分台账、积分商城和事件清算示例',version='1.0.0',lifespan=lifespan)
+app=FastAPI(title='城市绿色出行积分系统',description='碳减排模拟、积分商城、客服工单与可选真实大模型',version='1.1.0',lifespan=lifespan)
 
 @app.exception_handler(BusinessError)
 async def business_handler(_,exc:BusinessError):
@@ -89,7 +111,7 @@ def require_role(*roles):
     return wrapped
 
 @app.get('/api/health')
-def health():return {'ok':True,'service':'green-commute','version':'1.0.0'}
+def health():return {'ok':True,'service':'green-commute','version':'1.1.0'}
 
 @app.post('/api/auth/login')
 def login(payload:LoginIn,db:Session=Depends(get_db)):
@@ -196,6 +218,74 @@ def settle(redemption_id:int,u:User=Depends(require_role('admin')),db:Session=De
 @app.post('/api/admin/events/process')
 def process_events(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
     return {'processed':process_pending(db)}
+
+# ---- Human customer support. All data are stored in SQLite/MySQL. ----
+def _ticket_data(db:Session, ticket:SupportTicket):
+    customer=db.get(User,ticket.user_id)
+    return {'id':ticket.id,'user_id':ticket.user_id,'customer_name':customer.display_name if customer else '未知用户',
+            'category':ticket.category,'subject':ticket.subject,'status':ticket.status,
+            'created_at':ticket.created_at.isoformat()+'Z',
+            'updated_at':ticket.updated_at.isoformat()+'Z'}
+
+def _get_ticket(db:Session,ticket_id:int,u:User):
+    ticket=db.get(SupportTicket,ticket_id)
+    if not ticket or (u.role!='admin' and ticket.user_id!=u.id):
+        raise HTTPException(status_code=404,detail='工单不存在')
+    return ticket
+
+@app.get('/api/support/tickets')
+def list_support_tickets(u:User=Depends(current_user),db:Session=Depends(get_db)):
+    q=select(SupportTicket)
+    if u.role!='admin':q=q.where(SupportTicket.user_id==u.id)
+    rows=db.scalars(q.order_by(SupportTicket.updated_at.desc(),SupportTicket.id.desc()).limit(100)).all()
+    return [_ticket_data(db,t) for t in rows]
+
+@app.post('/api/support/tickets',status_code=201)
+def open_support_ticket(payload:TicketCreateIn,u:User=Depends(require_role('resident','merchant')),db:Session=Depends(get_db)):
+    t=SupportTicket(user_id=u.id,subject=payload.subject.strip(),category=payload.category,status='OPEN')
+    m=SupportMessage(ticket_id=0,sender_id=u.id,content=payload.content.strip())
+    if not t.subject or not m.content:
+        raise HTTPException(status_code=422,detail='标题和内容不能为空')
+    db.add(t);db.flush();m.ticket_id=t.id;db.add(m);db.commit();db.refresh(t)
+    return _ticket_data(db,t)
+
+@app.get('/api/support/tickets/{ticket_id}')
+def support_ticket_detail(ticket_id:int,u:User=Depends(current_user),db:Session=Depends(get_db)):
+    t=_get_ticket(db,ticket_id,u)
+    rows=db.scalars(select(SupportMessage).where(SupportMessage.ticket_id==t.id).order_by(SupportMessage.id).limit(200)).all()
+    messages=[]
+    for msg in rows:
+        author=db.get(User,msg.sender_id)
+        messages.append({'id':msg.id,'sender_role':author.role if author else 'unknown',
+                         'sender_name':author.display_name if author else '未知用户','sender_id':msg.sender_id,
+                         'content':msg.content,'created_at':msg.created_at.isoformat()+'Z'})
+    return {'ticket':_ticket_data(db,t),'messages':messages}
+
+@app.post('/api/support/tickets/{ticket_id}/messages',status_code=201)
+def support_reply(ticket_id:int,payload:TicketMessageIn,u:User=Depends(current_user),db:Session=Depends(get_db)):
+    t=_get_ticket(db,ticket_id,u)
+    if not payload.content.strip():raise HTTPException(status_code=422,detail='回复不能为空')
+    t.status='IN_PROGRESS' if u.role=='admin' else 'OPEN'
+    t.updated_at=utcnow()
+    db.add(SupportMessage(ticket_id=t.id,sender_id=u.id,content=payload.content.strip()))
+    db.commit()
+    return {'ok':True,'status':t.status}
+
+@app.patch('/api/support/tickets/{ticket_id}/status')
+def set_support_status(ticket_id:int,payload:TicketStatusIn,u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
+    t=_get_ticket(db,ticket_id,u)
+    t.status=payload.status;t.updated_at=utcnow();db.commit()
+    return {'ok':True,'status':t.status}
+
+# ---- Real LLM invocation is opt-in; never silently invent AI responses. ----
+@app.get('/api/assistant/config')
+def assistant_config(u:User=Depends(current_user)):
+    return configuration()
+
+@app.post('/api/assistant/chat')
+async def assistant_chat(payload:AssistantChatIn,u:User=Depends(current_user)):
+    if not payload.message.strip():raise HTTPException(status_code=422,detail='问题不能为空')
+    return await query_model(payload.message.strip(),[x.model_dump() for x in payload.history])
 
 STATIC=Path(__file__).resolve().parent/'static'
 app.mount('/assets',StaticFiles(directory=STATIC),name='assets')

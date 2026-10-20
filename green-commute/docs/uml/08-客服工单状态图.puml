@@ -1,0 +1,11 @@
+@startuml
+skinparam backgroundColor white
+[*] --> OPEN : 创建工单
+OPEN --> IN_PROGRESS : 管理员回复/受理
+OPEN --> RESOLVED : 管理员解决
+IN_PROGRESS --> RESOLVED : 管理员解决
+IN_PROGRESS --> OPEN : 用户补充回复
+RESOLVED --> OPEN : 用户继续咨询
+RESOLVED --> IN_PROGRESS : 管理员重新回复
+RESOLVED --> [*] : 结束
+@enduml

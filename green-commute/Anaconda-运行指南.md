@@ -1,3 +1,5 @@
+> **新增客服与大模型：** 已安装旧版请按 [`客服与AI功能操作指南.md`](客服与AI功能操作指南.md) 使用**升级补丁**。新项目整包名 `GreenGo-客服与AI完整项目-Anaconda版.zip`；启用真实大模型需配置 API Key，未配置时客服仍可正常使用。
+
 # GreenGo — Windows Anaconda Prompt 操作指南
 
 本指南所有命令都在 **Anaconda Prompt** 中执行，不需要 PowerShell、CMD、VS Code 终端、Node.js 或 Docker。`conda` 负责环境，Python 依赖通过该环境中的 `pip` 安装。请勿在 `(base)` 环境里直接安装所有项目依赖。
@@ -8,7 +10,7 @@
 
 ```bat
 cd /d "%USERPROFILE%\Downloads"
-python -m zipfile -e "GreenGo-完整项目源码与演示数据-Anaconda版.zip" .
+python -m zipfile -e "GreenGo-客服与AI完整项目-Anaconda版.zip" .
 cd green-commute
 conda env create -f environment.yml
 conda activate greengo
@@ -122,3 +124,23 @@ Word 文件输出在 `green-commute` 的上级文件夹，生成后仍需用 Off
 - `No such file or directory`：请检查是否位于含有 `app`、`tests`、`environment.yml` 的 `green-commute` 项目根目录。
 
 **边界说明**：本地 SQLite + FastAPI 可在 Conda 环境内运行。若未来需要 Docker 容器或云端部署，还需要相应系统服务；仅安装 Anaconda 并不等于已部署 Docker/MySQL。所有演示账号、积分和商品均用于教学模拟。
+
+## 7. 登录后仍显示登录界面：旧版升级
+
+旧版曾出现：登录成功后登录卡片没有隐藏。这是 CSS 规则覆盖 HTML `[hidden]` 属性所致。已修复且已添加自动化回归测试。
+
+如已运行旧版项目，**无需重新安装环境**。请先在正在运行服务器的 Anaconda Prompt 中按 **Ctrl+C** 停止服务。然后下载 `GreenGo-登录界面修复补丁.zip` 至“下载”目录，在 **Anaconda Prompt** 中执行：
+
+```bat
+cd /d "%USERPROFILE%\Downloads"
+python -m zipfile -e "GreenGo-登录界面修复补丁.zip" .
+cd green-commute
+conda activate greengo
+python -m pytest -q tests
+set "JWT_SECRET=greengo-course-local-only-change-before-deployment"
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+如果项目不在“下载”目录，先把修复补丁 ZIP 移到项目文件夹的**上一级目录**，再在 Anaconda Prompt 切换到该上一级目录执行解压。补丁不会覆盖 `green_commute.db`，原有用户、积分和订单数据保留。
+
+重新打开 `http://127.0.0.1:8000/`，按 **Ctrl+F5** 强制刷新网页，重新登录确认：登录表单隐藏、显示对应角色页面、右上角出现“退出”。

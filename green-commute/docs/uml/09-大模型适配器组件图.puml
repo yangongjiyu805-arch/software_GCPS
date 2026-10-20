@@ -1,0 +1,23 @@
+@startuml
+skinparam backgroundColor white
+package "GreenGo 单体Web应用" {
+  [AI助手页面
+浏览器历史缓存] as UI
+  [FastAPI /api/assistant/chat
+JWT + Pydantic校验] as API
+  [LLM Adapter
+服务端 API Key
+超时/异常脱敏] as Adapter
+  [本地静态 FAQ
+不调用模型] as FAQ
+}
+cloud "OpenAI兼容模型服务
+由环境变量配置" as LLM
+UI --> API : 发送问题与<=8轮历史
+API --> Adapter : 规范化消息
+Adapter --> LLM : HTTPS Chat Completions
+LLM --> Adapter : 模型生成的答复
+Adapter --> API
+API --> UI : 回复文本 + 模型名称
+UI --> FAQ : 展开固定规则
+@enduml

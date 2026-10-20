@@ -1,6 +1,12 @@
--- Actual SQLite schema introspected from the running demo database.
+-- Actual SQLite schema introspected from the updated demo database.
 
 CREATE INDEX ix_point_transactions_user_id ON point_transactions (user_id);
+
+CREATE INDEX ix_support_messages_ticket_id ON support_messages (ticket_id);
+
+CREATE INDEX ix_support_tickets_status ON support_tickets (status);
+
+CREATE INDEX ix_support_tickets_user_id ON support_tickets (user_id);
 
 CREATE INDEX ix_trips_user_id ON trips (user_id);
 
@@ -71,6 +77,29 @@ CREATE TABLE settlements (
 	FOREIGN KEY(merchant_id) REFERENCES users (id)
 );
 
+CREATE TABLE support_messages (
+	id INTEGER NOT NULL, 
+	ticket_id INTEGER NOT NULL, 
+	sender_id INTEGER NOT NULL, 
+	content TEXT NOT NULL, 
+	created_at DATETIME NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(ticket_id) REFERENCES support_tickets (id), 
+	FOREIGN KEY(sender_id) REFERENCES users (id)
+);
+
+CREATE TABLE support_tickets (
+	id INTEGER NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	category VARCHAR(24) NOT NULL, 
+	subject VARCHAR(100) NOT NULL, 
+	status VARCHAR(20) NOT NULL, 
+	created_at DATETIME NOT NULL, 
+	updated_at DATETIME NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(user_id) REFERENCES users (id)
+);
+
 CREATE TABLE trips (
 	id INTEGER NOT NULL, 
 	user_id INTEGER NOT NULL, 
@@ -96,3 +125,4 @@ CREATE TABLE users (
 	created_at DATETIME NOT NULL, 
 	PRIMARY KEY (id)
 );
+

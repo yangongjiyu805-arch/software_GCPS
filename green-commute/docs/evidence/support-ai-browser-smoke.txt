@@ -1,0 +1,7 @@
+Playwright Chromium DOM mock smoke test:
+PASS resident creates ticket
+PASS unconfigured AI disabled
+PASS configured mock model response rendered
+PASS admin replies and resolves ticket
+PASS JavaScript page errors: 0
+UI mocked HTTP; persistent API verified separately via pytest.

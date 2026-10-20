@@ -1,0 +1,25 @@
+@startuml
+skinparam backgroundColor white
+actor "居民/商户" as U
+participant "Web客服界面" as Web
+participant "FastAPI" as API
+database "SQLite/MySQL" as DB
+actor "运营管理员/人工客服" as A
+U -> Web: 提交咨询（分类、主题、内容）
+Web -> API: POST /api/support/tickets (JWT)
+API -> API: 检查登录角色并校验参数
+API -> DB: 事务写入SupportTicket + SupportMessage
+DB --> API: 工单#ID
+API --> Web: 201 + 工单信息
+A -> API: GET /api/support/tickets (JWT)
+API -> DB: 查询全部工单
+DB --> API: 工单列表
+A -> API: POST /api/support/tickets/{id}/messages
+API -> DB: 保存管理员回复 + 置IN_PROGRESS
+A -> API: PATCH /api/support/tickets/{id}/status RESOLVED
+API -> DB: 更新状态
+U -> API: GET /api/support/tickets/{id}
+API -> API: 仅所有者或管理员可访问
+API -> DB: 查询消息与状态
+API --> U: 工单及消息记录
+@enduml

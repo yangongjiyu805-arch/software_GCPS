@@ -82,3 +82,23 @@ class OutboxEvent(Base):
     error: Mapped[str|None]=mapped_column(Text,nullable=True)
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
     __table_args__=(UniqueConstraint('kind','ref_id',name='uq_outbox_business'),)
+
+
+class SupportTicket(Base):
+    """A user-owned customer-service conversation; admins act as agents."""
+    __tablename__ = 'support_tickets'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    category: Mapped[str] = mapped_column(String(24))
+    subject: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default='OPEN', index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+class SupportMessage(Base):
+    __tablename__ = 'support_messages'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ticket_id: Mapped[int] = mapped_column(ForeignKey('support_tickets.id'), index=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
