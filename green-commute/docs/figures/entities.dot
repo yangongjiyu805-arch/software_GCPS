@@ -1,0 +1,20 @@
+digraph G {
+ graph [rankdir=LR,bgcolor="transparent",nodesep=.55,ranksep=1, pad=.25];
+ node [shape=record,style="rounded,filled",fontname="Noto Sans CJK SC",fontsize=11,color="#89b39b",fillcolor="#f4fbf4",margin=".14,.11"];
+ edge [arrowhead=vee,color="#5f9677",penwidth=1.25,fontsize=9,fontname="Noto Sans CJK SC"];
+ user [label="{用户 users|id (PK)\lusername (UNIQUE)\lrole / balance\l}",fillcolor="#e5f3e7"];
+ trip [label="{行程 trips|id (PK)\luser_id (FK)\lclient_trip_id\lpoints / saved_g\l}"];
+ ledger [label="{积分流水 point_transactions|id (PK)\luser_id (FK)\lkind + reference_id (UNIQUE)\ldelta\l}"];
+ product [label="{商品 products|id (PK)\lmerchant_id (FK)\lcost / stock\l}"];
+ redeem [label="{兑换订单 redemptions|id (PK)\luser_id / product_id (FK)\lpoints / status\l}"];
+ settle [label="{清算 settlements|redemption_id (PK/FK)\lmerchant_id (FK)\lpoints / status\l}"];
+ outbox [label="{事件 outbox_events|id (PK)\lkind + ref_id (UNIQUE)\lstate / attempts\l}",fillcolor="#fff6e5"];
+ user -> trip [label="1:N"];
+ user -> ledger [label="1:N"];
+ user -> product [label="1:N（商户）"];
+ user -> redeem [label="1:N"];
+ product -> redeem [label="1:N"];
+ redeem -> settle [label="1:0..1"];
+ trip -> outbox [style=dashed,label="行程事件"];
+ redeem -> outbox [style=dashed,label="兑换事件"];
+}

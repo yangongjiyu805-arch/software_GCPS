@@ -1,0 +1,34 @@
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-dev-root-password-change-me}
+      MYSQL_DATABASE: green_commute
+      MYSQL_USER: greengo
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-dev-password-change-me}
+    volumes: [mysql_data:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      retries: 20
+  web:
+    build: .
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      DATABASE_URL: mysql+pymysql://greengo:${MYSQL_PASSWORD:-dev-password-change-me}@db:3306/green_commute?charset=utf8mb4
+      JWT_SECRET: ${JWT_SECRET:-change-me-local-demo-only}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-Demo@123456}
+    depends_on:
+      db: {condition: service_healthy}
+    restart: unless-stopped
+  worker:
+    build: .
+    command: ["python","-m","scripts.worker"]
+    environment:
+      DATABASE_URL: mysql+pymysql://greengo:${MYSQL_PASSWORD:-dev-password-change-me}@db:3306/green_commute?charset=utf8mb4
+      JWT_SECRET: ${JWT_SECRET:-change-me-local-demo-only}
+    depends_on:
+      db: {condition: service_healthy}
+    restart: unless-stopped
+volumes:
+  mysql_data:

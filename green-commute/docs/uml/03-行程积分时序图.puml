@@ -1,0 +1,26 @@
+@startuml
+actor 居民
+participant "Web 前端" as UI
+participant "Trip API" as API
+database "数据库" as DB
+participant "Outbox Dispatcher" as EVT
+居民 -> UI : 输入公交30公里
+UI -> API : POST /api/trips
+API -> API : 验证距离，计算 3300g / 33分
+API -> DB : 检查(user,trip_id)唯一性
+alt 同编号相同行程
+ DB --> API : 返回已存在行程
+else 新行程
+ API -> DB : 事务保存Trip(PENDING)+OutboxEvent
+ DB --> API : commit
+ API -> EVT : process_pending()
+ EVT -> DB : 查询待处理事件
+ EVT -> DB : 事务写入积分流水(+33),余额+33,Trip(AWARDED),Event(DONE)
+end
+API --> UI : 行程、积分、余额
+UI --> 居民 : 显示发放成功
+note right of EVT
+处理失败保留PENDING，
+可重试；流水业务键唯一防重复发放。
+end note
+@enduml

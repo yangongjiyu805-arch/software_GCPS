@@ -1,0 +1,9 @@
+@startuml
+[*] --> PROCESSING : 扣分及库存后创建
+PROCESSING --> TO_FULFILL : RedemptionCreated 事件
+TO_FULFILL --> FULFILLED : 商户核销
+note right of FULFILLED
+订单终态。关联清算单单独流转
+PENDING -> SETTLED
+end note
+@enduml

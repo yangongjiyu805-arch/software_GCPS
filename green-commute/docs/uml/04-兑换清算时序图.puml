@@ -1,0 +1,24 @@
+@startuml
+actor 居民
+actor 商户
+actor 管理员
+participant "Redemption API" as API
+database "数据库" as DB
+participant "Outbox Handler" as Event
+居民 -> API : POST /api/redemptions {product_id}
+API -> DB : UPDATE users SET balance=balance-cost WHERE balance>=cost
+API -> DB : UPDATE products SET stock=stock-1 WHERE stock>=1
+alt 余额或库存不足
+ API -> DB : rollback
+ API --> 居民 : 409(无扣分、无扣库存)
+else 校验通过
+ API -> DB : 创建兑换单+负向流水+Outbox事件，commit
+ API -> Event : 派发 RedemptionCreated
+ Event -> DB : 创建Settlement(PENDING);订单TO_FULFILL
+ API --> 居民 : 兑换成功
+ 商户 -> API : 订单核销
+ API -> DB : Redemption.status=FULFILLED
+ 管理员 -> API : 积分清算
+ API -> DB : 检查已履约;Settlement=SETTLED
+end
+@enduml

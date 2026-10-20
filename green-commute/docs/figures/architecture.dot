@@ -1,0 +1,17 @@
+digraph G {
+  graph [bgcolor="transparent",rankdir=LR, pad="0.35",nodesep="0.55",ranksep="0.8",fontname="Noto Sans CJK SC"];
+  node [shape=box,style="rounded,filled",fillcolor="#f0f8f0",color="#80ad92",fontname="Noto Sans CJK SC",fontsize=12,penwidth=1.4,margin="0.18,0.14"];
+  edge [color="#4b8970",penwidth=1.5,arrowsize=.7,fontname="Noto Sans CJK SC",fontsize=10];
+  browser [label="居民 / 商户 / 管理员\n响应式网页 SPA",fillcolor="#dfeee1"];
+  api [label="REST API / JWT / RBAC\nFastAPI + OpenAPI",fillcolor="#cfe9db"];
+  service [label="业务服务层\n积分核算 / 库存事务 / 清算"];
+  db [label="SQLite（本地）\nMySQL 8（部署示例）",shape=cylinder,fillcolor="#fff4dc",color="#d0b47d"];
+  outbox [label="Transactional Outbox\n事件重试 / 幂等消费",fillcolor="#e8f3df"];
+  worker [label="独立 Worker\n失败重试（可选）",fillcolor="#f4f8ed"];
+  browser->api [label="JSON/HTTP"];
+  api->service;
+  service->db [label="数据库事务"];
+  service->outbox [label="提交后触发"];
+  outbox->db [label="事件状态与台账"];
+  worker->outbox [style=dashed,label="扫描PENDING"];
+}

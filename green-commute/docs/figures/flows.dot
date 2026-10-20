@@ -1,0 +1,14 @@
+digraph G {
+ graph [rankdir=LR,bgcolor="transparent",nodesep=.5,ranksep=.72,pad=.28];
+ node [shape=box,style="rounded,filled",fontname="Noto Sans CJK SC",fontsize=11,color="#a8cbb2",fillcolor="#f1f8ed",margin=".18,.13"];
+ edge [color="#588f71",penwidth=1.35,arrowsize=.65,fontname="Noto Sans CJK SC",fontsize=10];
+ submit [label="提交模拟行程",fillcolor="#d9edd7"];
+ verify [label="校验编号 / 距离 / 方式"];
+ calculate [label="模拟减排与积分计算"];
+ saved [label="事务写入行程 + Outbox"];
+ event [label="消费者幂等发放\n更新余额与流水"];
+ mall [label="商品兑换\n余额及库存条件扣减"];
+ fulfill [label="商户核销"];
+ settle [label="管理员清算",fillcolor="#d9edd7"];
+ submit->verify->calculate->saved->event->mall->fulfill->settle;
+}

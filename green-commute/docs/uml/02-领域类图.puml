@@ -1,0 +1,64 @@
+@startuml
+skinparam classAttributeIconSize 0
+class User {
+  +id: int
+  +username: str
+  +role: str
+  +balance: int
+}
+class Trip {
+  +id: int
+  +user_id: int
+  +client_trip_id: str
+  +mode: str
+  +distance_m: int
+  +saved_g: int
+  +points: int
+  +status: str
+}
+class PointTransaction {
+  +id: int
+  +user_id: int
+  +kind: str
+  +reference_id: int
+  +delta: int
+}
+class Product {
+  +id: int
+  +merchant_id: int
+  +cost: int
+  +stock: int
+}
+class Redemption {
+  +id: int
+  +user_id: int
+  +product_id: int
+  +points: int
+  +status: str
+}
+class Settlement {
+  +redemption_id: int
+  +merchant_id: int
+  +points: int
+  +status: str
+}
+class OutboxEvent {
+  +id: int
+  +kind: str
+  +ref_id: int
+  +state: str
+  +attempts: int
+}
+User "1" -- "0..*" Trip : 上报
+User "1" -- "0..*" PointTransaction : 拥有
+User "1" -- "0..*" Redemption : 兑换
+User "1" -- "0..*" Product : 发布
+Product "1" -- "0..*" Redemption : 对应
+Redemption "1" -- "0..1" Settlement : 生成
+note bottom of PointTransaction
+unique(kind, reference_id)
+end note
+note bottom of Trip
+unique(user_id, client_trip_id)
+end note
+@enduml

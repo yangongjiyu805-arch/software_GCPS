@@ -1,0 +1,35 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+actor "居民用户" as Resident
+actor "商户" as Merchant
+actor "运营管理员" as Admin
+rectangle "青行绿色出行积分平台" {
+  usecase "注册/登录" as UC1
+  usecase "模拟上报行程" as UC2
+  usecase "核算碳减排" as UC3
+  usecase "发放积分" as UC4
+  usecase "查询积分流水" as UC5
+  usecase "浏览积分商城" as UC6
+  usecase "兑换商品" as UC7
+  usecase "上架商品" as UC8
+  usecase "核销订单" as UC9
+  usecase "统计平台数据" as UC10
+  usecase "商户积分清算" as UC11
+  usecase "重试待处理事件" as UC12
+}
+Resident --> UC1
+Resident --> UC2
+Resident --> UC5
+Resident --> UC6
+Resident --> UC7
+UC2 .> UC3 : <<include>>
+UC3 .> UC4 : <<include>>
+Merchant --> UC1
+Merchant --> UC8
+Merchant --> UC9
+Admin --> UC1
+Admin --> UC10
+Admin --> UC11
+Admin --> UC12
+@enduml

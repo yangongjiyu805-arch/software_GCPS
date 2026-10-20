@@ -1,0 +1,21 @@
+@startuml
+skinparam componentStyle rectangle
+node "用户浏览器" {
+ component "HTML/CSS/JavaScript SPA" as Front
+}
+node "Web服务器容器" {
+ component "FastAPI / OpenAPI / JWT / RBAC" as API
+ component "积分业务服务" as BIZ
+ component "Outbox Dispatch" as D
+}
+node "Worker容器(可选)" {
+ component "Outbox轮询工作进程" as W
+}
+database "MySQL 8 / SQLite" as DB
+Front --> API : HTTP JSON
+API --> BIZ
+BIZ --> DB : SQLAlchemy事务
+BIZ --> D : 提交后触发
+D --> DB : 事件消费
+W --> DB : 失败事件补偿
+@enduml

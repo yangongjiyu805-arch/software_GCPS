@@ -1,0 +1,237 @@
+{
+  "run_utc": "2026-10-20T06:05:41.981908+00:00",
+  "note": "Actual local HTTP calls; no external transport/payment validation.",
+  "steps": [
+    {
+      "step": "登录resident",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "status": 200,
+      "response": {
+        "token_type": "bearer",
+        "user": {
+          "id": 1,
+          "username": "resident",
+          "display_name": "林同学",
+          "role": "resident",
+          "balance": 21
+        }
+      }
+    },
+    {
+      "step": "提交30km公交",
+      "method": "POST",
+      "path": "/api/trips",
+      "status": 200,
+      "response": {
+        "trip": {
+          "id": 2,
+          "client_trip_id": "sample-eb2be63754e941",
+          "mode": "bus",
+          "mode_name": "公交",
+          "distance_km": 30.0,
+          "saved_kg": 3.3,
+          "points": 33,
+          "status": "AWARDED",
+          "created_at": "2026-10-20T06:05:41.839986Z"
+        },
+        "balance": 54
+      }
+    },
+    {
+      "step": "读取积分余额",
+      "method": "GET",
+      "path": "/api/wallet",
+      "status": 200,
+      "response": {
+        "balance": 54,
+        "transactions": [
+          {
+            "id": 3,
+            "kind": "TRIP",
+            "delta": 33,
+            "description": "绿色出行积分",
+            "reference_id": 2,
+            "created_at": "2026-10-20T06:05:41.843170Z"
+          },
+          {
+            "id": 2,
+            "kind": "REDEEM",
+            "delta": -12,
+            "description": "兑换 地铁单程体验券",
+            "reference_id": 1,
+            "created_at": "2026-10-20T06:05:25.709655Z"
+          },
+          {
+            "id": 1,
+            "kind": "TRIP",
+            "delta": 33,
+            "description": "绿色出行积分",
+            "reference_id": 1,
+            "created_at": "2026-10-20T06:05:25.697023Z"
+          }
+        ]
+      }
+    },
+    {
+      "step": "兑换12积分商品",
+      "method": "POST",
+      "path": "/api/redemptions",
+      "status": 200,
+      "response": {
+        "redemption": {
+          "id": 2,
+          "product_id": 1,
+          "product_name": "地铁单程体验券",
+          "points": 12,
+          "status": "TO_FULFILL",
+          "created_at": "2026-10-20T06:05:41.854888Z"
+        },
+        "balance": 42
+      }
+    },
+    {
+      "step": "登录merchant",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "status": 200,
+      "response": {
+        "token_type": "bearer",
+        "user": {
+          "id": 2,
+          "username": "merchant",
+          "display_name": "青禾商户",
+          "role": "merchant",
+          "balance": 0
+        }
+      }
+    },
+    {
+      "step": "商户查询订单",
+      "method": "GET",
+      "path": "/api/merchant/orders",
+      "status": 200,
+      "response": [
+        {
+          "redemption": {
+            "id": 2,
+            "product_id": 1,
+            "product_name": "地铁单程体验券",
+            "points": 12,
+            "status": "TO_FULFILL",
+            "created_at": "2026-10-20T06:05:41.854888Z"
+          },
+          "settlement_status": "PENDING"
+        },
+        {
+          "redemption": {
+            "id": 1,
+            "product_id": 1,
+            "product_name": "地铁单程体验券",
+            "points": 12,
+            "status": "FULFILLED",
+            "created_at": "2026-10-20T06:05:25.709061Z"
+          },
+          "settlement_status": "SETTLED"
+        }
+      ]
+    },
+    {
+      "step": "商户核销",
+      "method": "POST",
+      "path": "/api/merchant/orders/2/fulfill",
+      "status": 200,
+      "response": {
+        "ok": true,
+        "status": "FULFILLED"
+      }
+    },
+    {
+      "step": "登录admin",
+      "method": "POST",
+      "path": "/api/auth/login",
+      "status": 200,
+      "response": {
+        "token_type": "bearer",
+        "user": {
+          "id": 3,
+          "username": "admin",
+          "display_name": "平台管理员",
+          "role": "admin",
+          "balance": 0
+        }
+      }
+    },
+    {
+      "step": "管理员清算",
+      "method": "POST",
+      "path": "/api/admin/settlements/2/settle",
+      "status": 200,
+      "response": {
+        "ok": true,
+        "status": "SETTLED"
+      }
+    },
+    {
+      "step": "查询最终积分流水",
+      "method": "GET",
+      "path": "/api/wallet",
+      "status": 200,
+      "response": {
+        "balance": 42,
+        "transactions": [
+          {
+            "id": 4,
+            "kind": "REDEEM",
+            "delta": -12,
+            "description": "兑换 地铁单程体验券",
+            "reference_id": 2,
+            "created_at": "2026-10-20T06:05:41.855227Z"
+          },
+          {
+            "id": 3,
+            "kind": "TRIP",
+            "delta": 33,
+            "description": "绿色出行积分",
+            "reference_id": 2,
+            "created_at": "2026-10-20T06:05:41.843170Z"
+          },
+          {
+            "id": 2,
+            "kind": "REDEEM",
+            "delta": -12,
+            "description": "兑换 地铁单程体验券",
+            "reference_id": 1,
+            "created_at": "2026-10-20T06:05:25.709655Z"
+          },
+          {
+            "id": 1,
+            "kind": "TRIP",
+            "delta": 33,
+            "description": "绿色出行积分",
+            "reference_id": 1,
+            "created_at": "2026-10-20T06:05:25.697023Z"
+          }
+        ]
+      }
+    },
+    {
+      "step": "全站统计",
+      "method": "GET",
+      "path": "/api/admin/stats",
+      "status": 200,
+      "response": {
+        "trips": 2,
+        "saved_kg": 6.6,
+        "issued_points": 66,
+        "redemptions": 2,
+        "users": 1,
+        "pending_events": 0
+      }
+    }
+  ],
+  "this_trip_issued": 33,
+  "this_redemption_cost": 12,
+  "balance_after": 42,
+  "ledger_net": 42
+}
