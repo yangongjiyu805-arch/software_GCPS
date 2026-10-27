@@ -122,8 +122,8 @@ def serial_trip_detail(t):
                         for item in (getattr(t,'evidence',None) or [])]
     return result
 
-def serial_product(p):
-    return {'id':p.id,'name':p.name,'description':p.description,'category':p.category,'icon':p.icon,'cost':p.cost,'stock':p.stock,'active':p.active,'merchant_id':p.merchant_id}
+def serial_product(p, merchant_name=None):
+    return {'id':p.id,'name':p.name,'description':p.description,'category':p.category,'icon':p.icon,'cost':p.cost,'stock':p.stock,'active':p.active,'merchant_id':p.merchant_id,'merchant_name':merchant_name}
 
 def serial_redemption(r):
     return {'id':r.id,'product_id':r.product_id,'product_name':r.product_name,'points':r.points,'status':r.status,'created_at':r.created_at.isoformat()+'Z'}

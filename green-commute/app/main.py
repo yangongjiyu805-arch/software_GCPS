@@ -18,7 +18,7 @@ from .assistant_service import configuration, query_model
 from .security import create_token, decode_token, hash_password,verify_password
 from .services import (BusinessError, submit_trip,redeem,process_pending,stats,serial_user,
                        serial_trip,serial_product,serial_redemption,calculate,MODES,
-                       serial_trip,serial_trip_detail,serial_product,serial_redemption,calculate,MODES,
+                       serial_trip,serial_trip_detail,serial_product,serial_redemption,calculate,calculate_with_factors,MODES,
                        ensure_default_rule,get_active_rule,rule_snapshot,create_emission_rule)
 
 class LoginIn(BaseModel):
@@ -28,6 +28,8 @@ class RegisterIn(BaseModel):
     username: str=Field(min_length=3,max_length=48,pattern=r'^[a-zA-Z0-9_]+$')
     display_name: str=Field(min_length=1,max_length=80)
     password: str=Field(min_length=8,max_length=128)
+class MerchantCreateIn(RegisterIn):
+    pass
 class TripIn(BaseModel):
     client_trip_id: str=Field(min_length=6,max_length=72,pattern=r'^[a-zA-Z0-9_-]+$')
     mode: str
@@ -163,6 +165,20 @@ def add_emission_rule(payload:EmissionRuleIn,u:User=Depends(require_role('admin'
                               payload.points_per_kg,payload.mode_g_per_km)
     return rule_snapshot(rule)
 
+@app.get('/api/carbon/calculate')
+def carbon_calculate(mode: str, distance_km: Decimal, db:Session=Depends(get_db)):
+    rule=get_active_rule(db)
+    factors={x.mode:x.grams_per_km for x in rule.factors}
+    if mode not in factors:
+        raise BusinessError('当前规则不支持该出行方式')
+    distance_m, saved_g, points = calculate_with_factors(
+        mode,distance_km,rule.baseline_g_per_km,factors[mode],rule.points_per_kg)
+    return {'mode':mode,'distance_km':distance_m/1000,
+            'baseline_g_per_km':rule.baseline_g_per_km,'mode_g_per_km':factors[mode],
+            'saved_g':saved_g,'saved_kg':saved_g/1000,'points':points,
+            'rule_version':rule.version,
+            'formula':'floor(distance_m × (baseline_g_per_km - mode_g_per_km) / 1000)'}
+
 @app.post('/api/trips')
 def add_trip(payload:TripIn,u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
     trip=submit_trip(db,u.id,payload.client_trip_id,payload.mode,payload.distance_km,
@@ -191,8 +207,16 @@ def wallet(u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
     return {'balance':u.balance,'transactions':[{'id':x.id,'kind':x.kind,'delta':x.delta,'description':x.description,'reference_id':x.reference_id,'created_at':x.created_at.isoformat()+'Z'} for x in rows]}
 
 @app.get('/api/products')
-def products(db:Session=Depends(get_db)):
-    return [serial_product(p) for p in db.scalars(select(Product).where(Product.active==True).order_by(Product.id)).all()]
+def products(merchant_id: int|None=None, db:Session=Depends(get_db)):
+    q=select(Product,User.display_name).join(User,User.id==Product.merchant_id).where(Product.active==True)
+    if merchant_id is not None:q=q.where(Product.merchant_id==merchant_id)
+    return [serial_product(p,name) for p,name in db.execute(q.order_by(Product.id)).all()]
+
+@app.get('/api/merchants')
+def merchants(db:Session=Depends(get_db)):
+    product_count=func.count(Product.id).filter(Product.active==True)
+    rows=db.execute(select(User,product_count).outerjoin(Product,Product.merchant_id==User.id).where(User.role=='merchant').group_by(User.id).order_by(User.id)).all()
+    return [{'id':u.id,'display_name':u.display_name,'product_count':count} for u,count in rows]
 
 @app.post('/api/redemptions')
 def create_redemption(payload:dict,u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
@@ -216,6 +240,19 @@ def merchant_products(u:User=Depends(require_role('merchant')),db:Session=Depend
 def add_product(payload:ProductIn,u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
     p=Product(merchant_id=u.id,**payload.model_dump());db.add(p);db.commit();db.refresh(p)
     return serial_product(p)
+
+@app.get('/api/admin/merchants')
+def admin_merchants(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
+    return merchants(db)
+
+@app.post('/api/admin/merchants',status_code=201)
+def add_merchant(payload:MerchantCreateIn,u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
+    if db.scalar(select(User).where(User.username==payload.username)):
+        raise HTTPException(status_code=409,detail='用户名已存在')
+    merchant=User(username=payload.username,display_name=payload.display_name,
+                  password_hash=hash_password(payload.password),role='merchant')
+    db.add(merchant);db.commit();db.refresh(merchant)
+    return serial_user(merchant)
 
 @app.get('/api/merchant/orders')
 def merchant_orders(u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
