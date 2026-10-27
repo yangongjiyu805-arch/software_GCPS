@@ -12,10 +12,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .db import Base,engine,get_db,SessionLocal
-from .models import User, Trip, Product, PointTransaction, Redemption, Settlement, OutboxEvent, SupportTicket, SupportMessage, utcnow
+from .models import (User, Trip, Product, PointTransaction, Redemption, Settlement,
+                     OutboxEvent, EmissionRule, SupportTicket, SupportMessage, utcnow)
 from .assistant_service import configuration, query_model
 from .security import create_token, decode_token, hash_password,verify_password
-from .services import BusinessError, submit_trip,redeem,process_pending,stats,serial_user,serial_trip,serial_product,serial_redemption,calculate,MODES
+from .services import (BusinessError, submit_trip,redeem,process_pending,stats,serial_user,
+                       serial_trip,serial_product,serial_redemption,calculate,MODES,
+                       serial_trip,serial_trip_detail,serial_product,serial_redemption,calculate,MODES,
+                       ensure_default_rule,get_active_rule,rule_snapshot,create_emission_rule)
 
 class LoginIn(BaseModel):
     username: str
@@ -28,6 +32,14 @@ class TripIn(BaseModel):
     client_trip_id: str=Field(min_length=6,max_length=72,pattern=r'^[a-zA-Z0-9_-]+$')
     mode: str
     distance_km: Decimal
+    source: Literal['manual','simulated','imported','partner']='simulated'
+    evidence_reference: str|None=Field(default=None,max_length=120)
+class EmissionRuleIn(BaseModel):
+    version: str=Field(min_length=1,max_length=32,pattern=r'^[a-zA-Z0-9._-]+$')
+    name: str=Field(min_length=2,max_length=120)
+    baseline_g_per_km: int=Field(ge=1,le=1000)
+    points_per_kg: int=Field(ge=1,le=100)
+    mode_g_per_km: dict[str,int]
 class ProductIn(BaseModel):
     name: str=Field(min_length=2,max_length=90)
     description: str=Field(default='',max_length=300)
@@ -84,6 +96,7 @@ async def lifespan(app:FastAPI):
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         _seed(db)
+        ensure_default_rule(db)
         process_pending(db)
     yield
 
@@ -133,12 +146,27 @@ def me(u:User=Depends(current_user),db:Session=Depends(get_db)):
     db.refresh(u);return serial_user(u)
 
 @app.get('/api/rules')
-def rules():
-    return {'baseline_g_per_km':180,'mode_g_per_km':{'bus':70,'metro':40,'bike':0,'walk':0},'points_per_kg':10,'rounding':'向下取整到整积分','note':'教学模拟系数，非官方碳核算认证数据'}
+def rules(db:Session=Depends(get_db)):
+    rule=get_active_rule(db)
+    result=rule_snapshot(rule)
+    result.update(rounding='向下取整到整积分',note='教学模拟系数，非官方碳核算认证数据')
+    return result
+
+@app.get('/api/admin/rules')
+def admin_rules(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
+    rows=db.scalars(select(EmissionRule).order_by(EmissionRule.id.desc())).all()
+    return [rule_snapshot(x) for x in rows]
+
+@app.post('/api/admin/rules',status_code=201)
+def add_emission_rule(payload:EmissionRuleIn,u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
+    rule=create_emission_rule(db,payload.version,payload.name,payload.baseline_g_per_km,
+                              payload.points_per_kg,payload.mode_g_per_km)
+    return rule_snapshot(rule)
 
 @app.post('/api/trips')
 def add_trip(payload:TripIn,u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
-    trip=submit_trip(db,u.id,payload.client_trip_id,payload.mode,payload.distance_km)
+    trip=submit_trip(db,u.id,payload.client_trip_id,payload.mode,payload.distance_km,
+                     payload.source,payload.evidence_reference)
     process_pending(db)
     db.refresh(trip)
     db.refresh(u)
@@ -148,6 +176,13 @@ def add_trip(payload:TripIn,u:User=Depends(require_role('resident')),db:Session=
 def my_trips(u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
     rows=db.scalars(select(Trip).where(Trip.user_id==u.id).order_by(Trip.id.desc()).limit(100)).all()
     return [serial_trip(x) for x in rows]
+
+@app.get('/api/trips/{trip_id}')
+def trip_detail(trip_id:int,u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
+    row=db.get(Trip,trip_id)
+    if not row or row.user_id!=u.id:
+        raise HTTPException(status_code=404,detail='行程不存在')
+    return serial_trip_detail(row)
 
 @app.get('/api/wallet')
 def wallet(u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):

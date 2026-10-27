@@ -28,6 +28,59 @@ class Trip(Base):
     points: Mapped[int]=mapped_column(Integer)
     status: Mapped[str]=mapped_column(String(18),default='PENDING')
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+    calculation: Mapped['TripCalculation|None'] = relationship(back_populates='trip', uselist=False, cascade='all, delete-orphan')
+    evidence: Mapped[list['TripEvidence']] = relationship(back_populates='trip', order_by='TripEvidence.id', cascade='all, delete-orphan')
+
+class EmissionRule(Base):
+    """Versioned teaching rule set used to calculate one trip."""
+    __tablename__='emission_rules'
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    version: Mapped[str]=mapped_column(String(32),unique=True,index=True)
+    name: Mapped[str]=mapped_column(String(120))
+    baseline_g_per_km: Mapped[int]=mapped_column(Integer)
+    points_per_kg: Mapped[int]=mapped_column(Integer,default=10)
+    active: Mapped[bool]=mapped_column(Boolean,default=True,index=True)
+    effective_from: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+    effective_to: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+    factors: Mapped[list['EmissionFactor']] = relationship(back_populates='rule', cascade='all, delete-orphan')
+
+class EmissionFactor(Base):
+    __tablename__='emission_factors'
+    __table_args__=(UniqueConstraint('rule_id','mode',name='uq_rule_mode_factor'),)
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    rule_id: Mapped[int]=mapped_column(ForeignKey('emission_rules.id'),index=True)
+    mode: Mapped[str]=mapped_column(String(12))
+    grams_per_km: Mapped[int]=mapped_column(Integer)
+    rule: Mapped[EmissionRule] = relationship(back_populates='factors')
+
+class TripCalculation(Base):
+    """Immutable calculation snapshot for audit and future rule changes."""
+    __tablename__='trip_calculations'
+    trip_id: Mapped[int]=mapped_column(ForeignKey('trips.id'),primary_key=True)
+    rule_id: Mapped[int]=mapped_column(ForeignKey('emission_rules.id'),index=True)
+    rule_version: Mapped[str]=mapped_column(String(32))
+    baseline_g_per_km: Mapped[int]=mapped_column(Integer)
+    mode_g_per_km: Mapped[int]=mapped_column(Integer)
+    points_per_kg: Mapped[int]=mapped_column(Integer)
+    distance_m: Mapped[int]=mapped_column(Integer)
+    saved_g: Mapped[int]=mapped_column(Integer)
+    points: Mapped[int]=mapped_column(Integer)
+    calculated_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+    trip: Mapped[Trip] = relationship(back_populates='calculation')
+    rule: Mapped[EmissionRule] = relationship()
+
+class TripEvidence(Base):
+    """Source metadata for a submitted trip; the prototype may use simulated data."""
+    __tablename__='trip_evidence'
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    trip_id: Mapped[int]=mapped_column(ForeignKey('trips.id'),index=True)
+    source_type: Mapped[str]=mapped_column(String(20))
+    external_reference: Mapped[str|None]=mapped_column(String(120),nullable=True)
+    payload: Mapped[str|None]=mapped_column(Text,nullable=True)
+    captured_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+    created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+    trip: Mapped[Trip] = relationship(back_populates='evidence')
 
 class PointTransaction(Base):
     __tablename__='point_transactions'

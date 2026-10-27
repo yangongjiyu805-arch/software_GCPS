@@ -4,20 +4,80 @@ The local delivery path runs the dispatcher directly after transaction commit. T
 same dispatcher may be retried independently by a worker or an administrator.
 """
 from decimal import Decimal, InvalidOperation
+import json
 from sqlalchemy import select, update, func
 from sqlalchemy.exc import IntegrityError
-from .models import User, Trip, PointTransaction, Product, Redemption, Settlement, OutboxEvent, utcnow
+from .models import (User, Trip, PointTransaction, Product, Redemption, Settlement,
+                     OutboxEvent, EmissionRule, EmissionFactor, TripCalculation,
+                     TripEvidence, utcnow)
 
 # Illustrative teaching constants, not externally verified emissions factors.
 BASELINE_G_PER_KM = 180
 TRANSPORT_G_PER_KM = {'bus':70, 'metro':40, 'bike':0, 'walk':0}
 MODES = {'bus':'公交','metro':'地铁','bike':'骑行','walk':'步行'}
+TRIP_SOURCES = {'manual','simulated','imported','partner'}
+DEFAULT_RULE_VERSION = '2026.1'
 
 class BusinessError(Exception):
     def __init__(self,message,status_code=400):
         self.message=message;self.status_code=status_code
 
-def calculate(mode:str, distance_km: Decimal):
+def ensure_default_rule(db):
+    """Create the initial versioned rule set without touching existing trips."""
+    rule=db.scalar(select(EmissionRule).where(EmissionRule.version==DEFAULT_RULE_VERSION))
+    changed=False
+    if rule is None:
+        rule=EmissionRule(version=DEFAULT_RULE_VERSION,name='GreenGo 教学模拟规则',
+                          baseline_g_per_km=BASELINE_G_PER_KM,points_per_kg=10,active=True)
+        db.add(rule);db.flush();changed=True
+    existing={x.mode:x for x in rule.factors}
+    for mode,grams in TRANSPORT_G_PER_KM.items():
+        if mode not in existing:
+            db.add(EmissionFactor(rule_id=rule.id,mode=mode,grams_per_km=grams));changed=True
+    if changed:db.commit();db.refresh(rule)
+    return rule
+
+def get_active_rule(db):
+    now=utcnow()
+    rule=db.scalar(select(EmissionRule).where(EmissionRule.active==True,
+                   EmissionRule.effective_from<=now,
+                   (EmissionRule.effective_to.is_(None) | (EmissionRule.effective_to>now)))
+                   .order_by(EmissionRule.effective_from.desc(),EmissionRule.id.desc()))
+    return rule or ensure_default_rule(db)
+
+def create_emission_rule(db, version, name, baseline_g_per_km, points_per_kg, factors):
+    """Publish a new rule version; old calculation snapshots remain immutable."""
+    if set(factors) != set(MODES):
+        raise BusinessError('必须为公交、地铁、骑行、步行分别设置减排系数')
+    if any(not isinstance(value,int) or value<0 or value>=baseline_g_per_km for value in factors.values()):
+        raise BusinessError('出行方式减排系数必须为非负整数且小于基准值')
+    if baseline_g_per_km<=0 or points_per_kg<=0:
+        raise BusinessError('减排基准和积分比例必须为正数')
+    if db.scalar(select(EmissionRule).where(EmissionRule.version==version)):
+        raise BusinessError('规则版本已存在',409)
+    now=utcnow()
+    try:
+        db.execute(update(EmissionRule).where(EmissionRule.active==True).values(active=False,effective_to=now))
+        rule=EmissionRule(version=version,name=name,baseline_g_per_km=baseline_g_per_km,
+                          points_per_kg=points_per_kg,active=True,effective_from=now)
+        db.add(rule);db.flush()
+        db.add_all([EmissionFactor(rule_id=rule.id,mode=mode,grams_per_km=value)
+                    for mode,value in factors.items()])
+        db.commit();db.refresh(rule)
+        return rule
+    except IntegrityError:
+        db.rollback()
+        raise BusinessError('规则版本已存在',409)
+
+def rule_snapshot(rule):
+    factors={x.mode:x.grams_per_km for x in rule.factors}
+    return {'id':rule.id,'version':rule.version,'name':rule.name,
+            'baseline_g_per_km':rule.baseline_g_per_km,'points_per_kg':rule.points_per_kg,
+            'mode_g_per_km':factors,'effective_from':rule.effective_from.isoformat()+'Z',
+            'effective_to':rule.effective_to.isoformat()+'Z' if rule.effective_to else None}
+
+def calculate_with_factors(mode:str, distance_km: Decimal, baseline_g_per_km: int,
+                           mode_g_per_km: int, points_per_kg: int=10):
     if mode not in MODES:
         raise BusinessError('出行方式无效')
     try:
@@ -29,15 +89,38 @@ def calculate(mode:str, distance_km: Decimal):
         raise BusinessError('距离应在0.01—100公里之间，最多两位小数')
     distance_m=int(meters)
     # Distance is entered to hundredth of km (10 m). All factors are integers.
-    saved_g=(distance_m*(BASELINE_G_PER_KM-TRANSPORT_G_PER_KM[mode]))//1000
-    pts=saved_g//100  # floor(kg CO2e saved × 10)
+    if baseline_g_per_km <= mode_g_per_km or points_per_kg <= 0:
+        raise BusinessError('减排规则无效',500)
+    saved_g=(distance_m*(baseline_g_per_km-mode_g_per_km))//1000
+    pts=(saved_g*points_per_kg)//1000
     return distance_m,saved_g,pts
+
+def calculate(mode:str, distance_km: Decimal):
+    """Backward-compatible calculation using the default teaching rule."""
+    return calculate_with_factors(mode,distance_km,BASELINE_G_PER_KM,TRANSPORT_G_PER_KM.get(mode,-1),10)
 
 def serial_user(user):
     return {'id':user.id,'username':user.username,'display_name':user.display_name,'role':user.role,'balance':user.balance}
 
 def serial_trip(t):
-    return {'id':t.id,'client_trip_id':t.client_trip_id,'mode':t.mode,'mode_name':MODES[t.mode], 'distance_km':t.distance_m/1000,'saved_kg':t.saved_g/1000,'points':t.points,'status':t.status,'created_at':t.created_at.isoformat()+'Z'}
+    calc=getattr(t,'calculation',None)
+    evidence=getattr(t,'evidence',None) or []
+    return {'id':t.id,'client_trip_id':t.client_trip_id,'mode':t.mode,'mode_name':MODES[t.mode],
+            'distance_km':t.distance_m/1000,'saved_kg':t.saved_g/1000,'points':t.points,
+            'status':t.status,'source':evidence[0].source_type if evidence else 'legacy',
+            'rule_version':calc.rule_version if calc else None,
+            'calculation':{'baseline_g_per_km':calc.baseline_g_per_km,
+                           'mode_g_per_km':calc.mode_g_per_km,
+                           'points_per_kg':calc.points_per_kg} if calc else None,
+            'created_at':t.created_at.isoformat()+'Z'}
+
+def serial_trip_detail(t):
+    result=serial_trip(t)
+    result['evidence']=[{'source_type':item.source_type,
+                         'external_reference':item.external_reference,
+                         'captured_at':item.captured_at.isoformat()+'Z'}
+                        for item in (getattr(t,'evidence',None) or [])]
+    return result
 
 def serial_product(p):
     return {'id':p.id,'name':p.name,'description':p.description,'category':p.category,'icon':p.icon,'cost':p.cost,'stock':p.stock,'active':p.active,'merchant_id':p.merchant_id}
@@ -45,8 +128,15 @@ def serial_product(p):
 def serial_redemption(r):
     return {'id':r.id,'product_id':r.product_id,'product_name':r.product_name,'points':r.points,'status':r.status,'created_at':r.created_at.isoformat()+'Z'}
 
-def submit_trip(db,user_id,client_trip_id,mode,distance_km):
-    meters,saved,points=calculate(mode,distance_km)
+def submit_trip(db,user_id,client_trip_id,mode,distance_km,source='simulated',evidence_reference=None):
+    if source not in TRIP_SOURCES:
+        raise BusinessError('行程来源无效')
+    rule=get_active_rule(db)
+    factors={x.mode:x.grams_per_km for x in rule.factors}
+    if mode not in factors:
+        raise BusinessError('当前规则不支持该出行方式')
+    meters,saved,points=calculate_with_factors(mode,distance_km,rule.baseline_g_per_km,
+                                                factors[mode],rule.points_per_kg)
     existing=db.scalar(select(Trip).where(Trip.user_id==user_id,Trip.client_trip_id==client_trip_id))
     if existing:
         if (existing.mode,existing.distance_m)!=(mode,meters):
@@ -55,6 +145,13 @@ def submit_trip(db,user_id,client_trip_id,mode,distance_km):
     trip=Trip(user_id=user_id,client_trip_id=client_trip_id,mode=mode,distance_m=meters,saved_g=saved,points=points)
     try:
         db.add(trip);db.flush()
+        db.add(TripCalculation(trip_id=trip.id,rule_id=rule.id,rule_version=rule.version,
+                               baseline_g_per_km=rule.baseline_g_per_km,
+                               mode_g_per_km=factors[mode],points_per_kg=rule.points_per_kg,
+                               distance_m=meters,saved_g=saved,points=points))
+        db.add(TripEvidence(trip_id=trip.id,source_type=source,
+                            external_reference=evidence_reference,
+                            payload=json.dumps({'mode':mode,'distance_km':str(distance_km)},ensure_ascii=False)))
         db.add(OutboxEvent(kind='TripSubmitted',ref_id=trip.id))
         db.commit()
     except IntegrityError:
