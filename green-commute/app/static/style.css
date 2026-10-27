@@ -48,3 +48,46 @@ body:before{content:'';position:fixed;inset:0;pointer-events:none;background:lin
 .pill,.mini-feature span,.tag,.status,.small-action{border-radius:5px}
 .hero .button-light,.primary.block{border-radius:6px}
 .login-card:before{border-radius:0 0 5px 5px}
+
+/* Final geometry rule: every visible component uses strict rectangular corners. */
+*,*::before,*::after{border-radius:0 !important}
+
+/* Muted green palette and white surface treatment. */
+:root{--dark:#2d5141;--forest:#315b48;--green:#4d7d66;--green-strong:#416b58;--mint:#edf3ee;--lime:#dfe8d0;--cream:#fff;--line:#dfe7e1;--muted:#788a80;--bg:#fff;--white:#fff;--shadow:0 16px 38px rgba(39,75,58,.08);--shadow-soft:0 8px 24px rgba(39,75,58,.06)}
+body,.app-shell,.main,.content{background:#fff;color:#2d4539}
+.sidebar{background:#315b48}
+.topbar{background:#fff;border-bottom-color:#dfe7e1}
+.eco-illustration,.hero,.stat-card,.surface,.product-card,.login-card,.tips,.sample,.ai-thread,.ai-notice,.product-art{background:#fff}
+.eco-illustration{color:#416b58;border-color:#d6e3da;box-shadow:0 12px 28px rgba(39,75,58,.06)}
+.eco-illustration:after{color:#e8eee9}
+.hero{color:#2d5141;border:1px solid #d6e3da;box-shadow:0 16px 34px rgba(39,75,58,.07)}
+.hero:before{background:linear-gradient(120deg,transparent 55%,#edf3ee 55% 56%,transparent 56%)}
+.hero:after{color:#dfe9e2}
+.hero h2{color:#2d5141}.hero p{color:#6d8176}
+.big-leaf{color:#5a866f;border-color:#b9cec0;background:#fff;box-shadow:none}
+.nav-link.active{background:#edf3ee;color:#416b58;box-shadow:none}.nav-link:hover{background:#f4f7f4;color:#416b58}
+.primary{background:#4d7d66;box-shadow:0 8px 16px rgba(39,75,58,.12)}.primary:hover{background:#416b58;box-shadow:0 10px 20px rgba(39,75,58,.16)}
+.hero .button-light{background:#edf3ee;color:#416b58;box-shadow:none}
+.stat-icon{background:#edf3ee;color:#4d7d66}.bar{background:#8fae9b;box-shadow:none}
+.tips{border-color:#dfe7e1;color:#416b58}.tips p{color:#718379}
+.product-art{color:#5a866f}.price,.sample-value{color:#4d7d66}
+.filter.active{background:#edf3ee;color:#416b58;border-color:#cbdacf;box-shadow:none}
+.sample{border-color:#dfe7e1}.login-card{box-shadow:0 20px 48px rgba(39,75,58,.09)}
+.login-page:before{background:#f7faf7}.login-copy:after{color:#dbe8df}
+.mini-feature span{background:#fff;border-color:#d5e3da;color:#4d7d66;box-shadow:none}
+.auth-tabs,.demo-switch{background:#f4f7f4}.auth-tab.active,.demo.active{background:#fff;color:#416b58;box-shadow:none}
+.ai-thread{border-color:#dfe7e1}.ai-bubble.mine{background:#edf3ee}.ai-bubble.bot{background:#fff;border-color:#dfe7e1}
+.ai-notice{border-color:#dfe7e1}.status,.small-action{background:#edf3ee;color:#416b58}
+.nav-link.active,.auth-tabs,.demo-switch,.filter.active,.ai-bubble.mine{background:#fff}
+.login-page:before,.hero:before{background:transparent}
+.login-card input,.login-card select{background:#fff}
+.status,.small-action{background:#fff;border:1px solid #dfe7e1}
+
+/* Remove every remaining pale or warm surface color. */
+body:before{background:transparent !important}
+.brand-mark,.avatar,.pill,.stat-icon,.table th,.status,.status.pending,.tag,.filter,.filter.active,
+.ticket-item:hover,.ticket-item.selected,.message-bubble,.message-bubble.agent-message,
+.ai-bubble,.ai-bubble.mine,.ai-notice,.auth-tabs,.demo-switch,.demo.active,
+.hero .button-light,.login-card input,.login-card select{background:#fff !important;background-image:none !important}
+.status.pending{color:#6f8077}
+.nav-link.active,.nav-link:hover{background:#fff !important;background-image:none !important}

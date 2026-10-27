@@ -1,6 +1,6 @@
 """Database setup. SQLite is the zero-config local profile; set DATABASE_URL for MySQL."""
 import os
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./green_commute.db')
@@ -19,6 +19,24 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 class Base(DeclarativeBase):
     pass
+
+def ensure_runtime_schema():
+    """Apply the small additive migrations needed by the zero-config profile.
+
+    The project intentionally keeps deployment lightweight, so an additive ledger
+    column is upgraded at startup for existing SQLite/MySQL databases instead of
+    requiring a separate migration command during the classroom demo.
+    """
+    inspector=inspect(engine)
+    if 'point_transactions' not in inspector.get_table_names():
+        return
+    columns={col['name'] for col in inspector.get_columns('point_transactions')}
+    if 'balance_after' not in columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                'ALTER TABLE point_transactions '
+                'ADD COLUMN balance_after INTEGER NOT NULL DEFAULT 0'
+            ))
 
 def get_db():
     with SessionLocal() as session:

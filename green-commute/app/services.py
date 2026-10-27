@@ -128,6 +128,74 @@ def serial_product(p, merchant_name=None):
 def serial_redemption(r):
     return {'id':r.id,'product_id':r.product_id,'product_name':r.product_name,'points':r.points,'status':r.status,'created_at':r.created_at.isoformat()+'Z'}
 
+def serial_point_transaction(item):
+    return {'id':item.id,'kind':item.kind,'delta':item.delta,
+            'balance_after':item.balance_after,'description':item.description,
+            'reference_id':item.reference_id,'created_at':item.created_at.isoformat()+'Z'}
+
+def post_points(db,user_id,kind,reference_id,delta,description):
+    """Post one idempotent ledger entry and update the materialized balance.
+
+    The user balance is a fast read model; PointTransaction is the audit source.
+    The business key makes retries safe, while the conditional update prevents a
+    negative balance when two redemptions compete for the same account.
+    """
+    if not kind or not isinstance(reference_id,int) or isinstance(reference_id,bool):
+        raise BusinessError('积分业务引用无效',422)
+    if not isinstance(delta,int) or isinstance(delta,bool) or delta==0:
+        raise BusinessError('积分变动必须为非零整数',422)
+    existing=db.scalar(select(PointTransaction).where(
+        PointTransaction.kind==kind,PointTransaction.reference_id==reference_id))
+    if existing:
+        if existing.user_id!=user_id or existing.delta!=delta:
+            raise BusinessError('积分业务流水冲突',409)
+        return existing
+    conditions=[User.id==user_id]
+    if delta<0:
+        conditions.append(User.balance>=-delta)
+    changed=db.execute(update(User).where(*conditions).values(balance=User.balance+delta))
+    if changed.rowcount!=1:
+        raise BusinessError('积分余额不足',409)
+    user=db.get(User,user_id)
+    entry=PointTransaction(user_id=user_id,kind=kind,reference_id=reference_id,
+                           delta=delta,balance_after=user.balance,
+                           description=description[:200])
+    db.add(entry)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        existing=db.scalar(select(PointTransaction).where(
+            PointTransaction.kind==kind,PointTransaction.reference_id==reference_id))
+        if existing and existing.user_id==user_id and existing.delta==delta:
+            return existing
+        raise BusinessError('积分业务流水冲突',409)
+    return entry
+
+def backfill_ledger_snapshots(db):
+    """Populate balance snapshots for ledgers created before the additive column."""
+    rows=db.scalars(select(PointTransaction).order_by(
+        PointTransaction.user_id,PointTransaction.id)).all()
+    running={};changed=False
+    for item in rows:
+        running[item.user_id]=running.get(item.user_id,0)+item.delta
+        if item.balance_after!=running[item.user_id]:
+            item.balance_after=running[item.user_id];changed=True
+    if changed:db.commit()
+    return len(rows)
+
+def ledger_summary(db,user_id):
+    earned=db.scalar(select(func.coalesce(func.sum(PointTransaction.delta),0)).where(
+        PointTransaction.user_id==user_id,PointTransaction.delta>0)) or 0
+    spent=db.scalar(select(func.coalesce(func.sum(-PointTransaction.delta),0)).where(
+        PointTransaction.user_id==user_id,PointTransaction.delta<0)) or 0
+    count=db.scalar(select(func.count()).select_from(PointTransaction).where(
+        PointTransaction.user_id==user_id)) or 0
+    user=db.get(User,user_id)
+    net=earned-spent
+    return {'balance':user.balance,'total_earned':earned,'total_spent':spent,
+            'net_change':net,'transaction_count':count,'consistent':user.balance==net}
+
 def submit_trip(db,user_id,client_trip_id,mode,distance_km,source='simulated',evidence_reference=None):
     if source not in TRIP_SOURCES:
         raise BusinessError('行程来源无效')
@@ -166,14 +234,40 @@ def redeem(db,user_id,product_id):
     if p is None or not p.active:raise BusinessError('商品不存在或已下架',404)
     try:
         # Atomic conditional updates serialize competing debits / stock depletion.
-        debit=db.execute(update(User).where(User.id==user_id, User.balance>=p.cost).values(balance=User.balance-p.cost))
-        if debit.rowcount!=1:raise BusinessError('积分余额不足',409)
         stock=db.execute(update(Product).where(Product.id==p.id,Product.stock>=1,Product.active==True).values(stock=Product.stock-1))
         if stock.rowcount!=1:raise BusinessError('商品库存不足',409)
         red=Redemption(user_id=user_id,product_id=p.id,product_name=p.name,points=p.cost)
         db.add(red);db.flush()
-        db.add(PointTransaction(user_id=user_id,kind='REDEEM',reference_id=red.id,delta=-p.cost,description='兑换 '+p.name))
+        post_points(db,user_id,'REDEEM',red.id,-p.cost,'兑换 '+p.name)
         db.add(OutboxEvent(kind='RedemptionCreated',ref_id=red.id))
+        db.commit()
+        return red
+    except Exception:
+        db.rollback();raise
+
+def refund_redemption(db,user_id,redemption_id):
+    """Return points for a resident-owned order before merchant fulfillment."""
+    red=db.get(Redemption,redemption_id)
+    if red is None or red.user_id!=user_id:
+        raise BusinessError('兑换订单不存在',404)
+    existing=db.scalar(select(PointTransaction).where(
+        PointTransaction.kind=='REFUND',PointTransaction.reference_id==red.id))
+    if existing:
+        red.status='REFUNDED'
+        settlement=db.get(Settlement,red.id)
+        if settlement and settlement.status!='SETTLED':settlement.status='CANCELLED'
+        db.commit()
+        return red
+    if red.status!='TO_FULFILL':
+        raise BusinessError('当前订单状态不允许退款',409)
+    product=db.get(Product,red.product_id)
+    if product is None:raise BusinessError('原商品不存在，无法回补库存',409)
+    try:
+        db.execute(update(Product).where(Product.id==product.id).values(stock=Product.stock+1))
+        post_points(db,user_id,'REFUND',red.id,red.points,'兑换退款 '+red.product_name)
+        red.status='REFUNDED'
+        settlement=db.get(Settlement,red.id)
+        if settlement and settlement.status!='SETTLED':settlement.status='CANCELLED'
         db.commit()
         return red
     except Exception:
@@ -191,13 +285,13 @@ def process_pending(db, limit=100):
         try:
             if e.kind=='TripSubmitted':
                 trip=db.get(Trip,e.ref_id)
-                if trip and trip.status=='PENDING':
-                    # If ledger exists after retry, never credit again.
-                    txn=db.scalar(select(PointTransaction).where(PointTransaction.kind=='TRIP',PointTransaction.reference_id==trip.id))
-                    if not txn:
-                        db.execute(update(User).where(User.id==trip.user_id).values(balance=User.balance+trip.points))
-                        db.add(PointTransaction(user_id=trip.user_id,kind='TRIP',reference_id=trip.id,delta=trip.points,description='绿色出行积分'))
-                    trip.status='AWARDED'
+                if trip:
+                    txn=db.scalar(select(PointTransaction).where(
+                        PointTransaction.kind=='TRIP',PointTransaction.reference_id==trip.id))
+                    if trip.status=='PENDING' or (trip.points>0 and not txn):
+                        if trip.points>0:
+                            post_points(db,trip.user_id,'TRIP',trip.id,trip.points,'绿色出行积分')
+                        trip.status='AWARDED'
             elif e.kind=='RedemptionCreated':
                 red=db.get(Redemption,e.ref_id)
                 if red:

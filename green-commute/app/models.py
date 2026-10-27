@@ -90,6 +90,7 @@ class PointTransaction(Base):
     kind: Mapped[str]=mapped_column(String(20))
     reference_id: Mapped[int]=mapped_column(Integer)
     delta: Mapped[int]=mapped_column(Integer)
+    balance_after: Mapped[int]=mapped_column(Integer,default=0)
     description: Mapped[str]=mapped_column(String(200))
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
 

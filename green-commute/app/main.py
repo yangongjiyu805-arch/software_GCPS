@@ -5,21 +5,23 @@ from pathlib import Path
 from typing import Literal
 import os
 import jwt
-from fastapi import FastAPI, Depends, HTTPException, Header, status
+from fastapi import FastAPI, Depends, HTTPException, Header, Query, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
-from .db import Base,engine,get_db,SessionLocal
+from .db import Base,engine,get_db,SessionLocal,ensure_runtime_schema
 from .models import (User, Trip, Product, PointTransaction, Redemption, Settlement,
                      OutboxEvent, EmissionRule, SupportTicket, SupportMessage, utcnow)
 from .assistant_service import configuration, query_model
 from .security import create_token, decode_token, hash_password,verify_password
-from .services import (BusinessError, submit_trip,redeem,process_pending,stats,serial_user,
+from .services import (BusinessError, submit_trip,redeem,refund_redemption,process_pending,stats,serial_user,
                        serial_trip,serial_product,serial_redemption,calculate,MODES,
-                       serial_trip,serial_trip_detail,serial_product,serial_redemption,calculate,calculate_with_factors,MODES,
-                       ensure_default_rule,get_active_rule,rule_snapshot,create_emission_rule)
+                       serial_trip,serial_trip_detail,serial_product,serial_redemption,
+                       serial_point_transaction,ledger_summary,backfill_ledger_snapshots,
+                       calculate,calculate_with_factors,MODES,ensure_default_rule,
+                       get_active_rule,rule_snapshot,create_emission_rule)
 
 class LoginIn(BaseModel):
     username: str
@@ -96,10 +98,12 @@ async def lifespan(app:FastAPI):
     if os.getenv('ENVIRONMENT')=='production' and (os.getenv('JWT_SECRET','') in ('','local-dev-secret-REPLACE-BEFORE-DEPLOYMENT')):
         raise RuntimeError('Set a strong JWT_SECRET before production deployment')
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema()
     with SessionLocal() as db:
         _seed(db)
         ensure_default_rule(db)
         process_pending(db)
+        backfill_ledger_snapshots(db)
     yield
 
 app=FastAPI(title='城市绿色出行积分系统',description='碳减排模拟、积分商城、客服工单与可选真实大模型',version='1.1.0',lifespan=lifespan)
@@ -201,10 +205,18 @@ def trip_detail(trip_id:int,u:User=Depends(require_role('resident')),db:Session=
     return serial_trip_detail(row)
 
 @app.get('/api/wallet')
-def wallet(u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
+def wallet(limit:int=Query(default=100,ge=1,le=200),before_id:int|None=Query(default=None,ge=1),
+           u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
     db.refresh(u)
-    rows=db.scalars(select(PointTransaction).where(PointTransaction.user_id==u.id).order_by(PointTransaction.id.desc()).limit(100)).all()
-    return {'balance':u.balance,'transactions':[{'id':x.id,'kind':x.kind,'delta':x.delta,'description':x.description,'reference_id':x.reference_id,'created_at':x.created_at.isoformat()+'Z'} for x in rows]}
+    q=select(PointTransaction).where(PointTransaction.user_id==u.id)
+    if before_id is not None:q=q.where(PointTransaction.id<before_id)
+    rows=db.scalars(q.order_by(PointTransaction.id.desc()).limit(limit+1)).all()
+    has_more=len(rows)>limit
+    rows=rows[:limit]
+    result=ledger_summary(db,u.id)
+    result.update(transactions=[serial_point_transaction(x) for x in rows],
+                 page_size=limit,next_before_id=rows[-1].id if has_more and rows else None)
+    return result
 
 @app.get('/api/products')
 def products(merchant_id: int|None=None, db:Session=Depends(get_db)):
@@ -231,6 +243,15 @@ def create_redemption(payload:dict,u:User=Depends(require_role('resident')),db:S
 @app.get('/api/redemptions')
 def my_redemptions(u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
     return [serial_redemption(r) for r in db.scalars(select(Redemption).where(Redemption.user_id==u.id).order_by(Redemption.id.desc()).limit(100)).all()]
+
+@app.post('/api/redemptions/{redemption_id}/refund')
+def refund_my_redemption(redemption_id:int,u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
+    # Resolve the creation event first so an immediately submitted order has a
+    # deterministic TO_FULFILL state before the refund decision is made.
+    process_pending(db)
+    result=refund_redemption(db,u.id,redemption_id)
+    db.refresh(u)
+    return {'redemption':serial_redemption(result),'balance':u.balance}
 
 @app.get('/api/merchant/products')
 def merchant_products(u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):

@@ -75,6 +75,59 @@ def test_trip_awards_and_ledger(client):
     w=api(client,'get','/api/wallet',h).json()
     assert w['balance']==11 and len(w['transactions'])==1 and w['transactions'][0]['delta']==11
 
+def test_wallet_summary_snapshots_and_cursor_pagination(client):
+    h=login(client)
+    trip(client,h,distance='30')  # 33 points
+    first=api(client,'get','/api/wallet',h).json()
+    assert first['total_earned']==33 and first['total_spent']==0
+    assert first['net_change']==33 and first['transaction_count']==1
+    assert first['consistent'] is True
+    assert first['transactions'][0]['balance_after']==33
+    red=api(client,'post','/api/redemptions',h,{'product_id':1})
+    assert red.status_code==200
+    full=api(client,'get','/api/wallet',h).json()
+    assert full['balance']==21 and full['total_earned']==33 and full['total_spent']==12
+    assert full['net_change']==21 and full['transaction_count']==2 and full['consistent'] is True
+    assert full['transactions'][0]['delta']==-12 and full['transactions'][0]['balance_after']==21
+    page=client.get('/api/wallet',headers=h,params={'limit':1}).json()
+    assert len(page['transactions'])==1 and page['next_before_id'] is not None
+    older=client.get('/api/wallet',headers=h,params={'limit':1,'before_id':page['next_before_id']}).json()
+    assert len(older['transactions'])==1 and older['transactions'][0]['delta']==33
+
+def test_redemption_refund_returns_points_stock_and_auditable_entry(client):
+    h=login(client)
+    trip(client,h,distance='30')  # 33 points
+    before_stock=client.get('/api/products').json()[0]['stock']
+    red=api(client,'post','/api/redemptions',h,{'product_id':1}).json()['redemption']
+    assert api(client,'get','/api/wallet',h).json()['balance']==21
+    refund=api(client,'post',f"/api/redemptions/{red['id']}/refund",h)
+    assert refund.status_code==200 and refund.json()['redemption']['status']=='REFUNDED'
+    assert refund.json()['balance']==33
+    assert client.get('/api/products').json()[0]['stock']==before_stock
+    wallet=api(client,'get','/api/wallet',h).json()
+    assert wallet['total_earned']==45 and wallet['total_spent']==12
+    assert wallet['transactions'][0]['kind']=='REFUND'
+    assert wallet['transactions'][0]['delta']==12 and wallet['transactions'][0]['balance_after']==33
+    assert wallet['consistent'] is True
+    again=api(client,'post',f"/api/redemptions/{red['id']}/refund",h)
+    assert again.status_code==200 and again.json()['balance']==33
+    assert api(client,'get','/api/wallet',h).json()['transaction_count']==3
+
+def test_refund_is_closed_after_merchant_fulfillment(client):
+    resident=login(client);merchant=login(client,'merchant')
+    trip(client,resident,distance='50')
+    red=api(client,'post','/api/redemptions',resident,{'product_id':1}).json()['redemption']
+    assert api(client,'post',f"/api/merchant/orders/{red['id']}/fulfill",merchant).status_code==200
+    assert api(client,'post',f"/api/redemptions/{red['id']}/refund",resident).status_code==409
+
+def test_zero_point_trip_does_not_create_fake_ledger_entry(client):
+    h=login(client)
+    r=trip(client,h,mode='walk',distance='0.01')
+    assert r.json()['trip']['status']=='AWARDED'
+    wallet=api(client,'get','/api/wallet',h).json()
+    assert wallet['balance']==0 and wallet['transaction_count']==0
+    assert wallet['transactions']==[] and wallet['consistent'] is True
+
 def test_trip_idempotency_and_conflict(client):
     h=login(client)
     trip(client,h)
