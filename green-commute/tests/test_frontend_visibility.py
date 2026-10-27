@@ -23,3 +23,15 @@ def test_login_sets_user_header_for_all_roles():
     script = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "state.user=result.user;showUser();" in script
     assert "$('#logout').hidden=false" in script
+
+def test_register_and_marketplace_merchant_filters_exist():
+    script = (STATIC / "app.js").read_text(encoding="utf-8")
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert 'id="register-form"' in html
+    assert "'/auth/register'" in script
+    assert "data-merchant" in script
+
+def test_admin_merchant_creation_is_wired():
+    script = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "'/admin/merchants'" in script
+    assert "商户账号" in script

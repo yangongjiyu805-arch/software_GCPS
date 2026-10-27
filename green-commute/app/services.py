@@ -39,8 +39,8 @@ def serial_user(user):
 def serial_trip(t):
     return {'id':t.id,'client_trip_id':t.client_trip_id,'mode':t.mode,'mode_name':MODES[t.mode], 'distance_km':t.distance_m/1000,'saved_kg':t.saved_g/1000,'points':t.points,'status':t.status,'created_at':t.created_at.isoformat()+'Z'}
 
-def serial_product(p):
-    return {'id':p.id,'name':p.name,'description':p.description,'category':p.category,'icon':p.icon,'cost':p.cost,'stock':p.stock,'active':p.active,'merchant_id':p.merchant_id}
+def serial_product(p, merchant_name=None):
+    return {'id':p.id,'name':p.name,'description':p.description,'category':p.category,'icon':p.icon,'cost':p.cost,'stock':p.stock,'active':p.active,'merchant_id':p.merchant_id,'merchant_name':merchant_name}
 
 def serial_redemption(r):
     return {'id':r.id,'product_id':r.product_id,'product_name':r.product_name,'points':r.points,'status':r.status,'created_at':r.created_at.isoformat()+'Z'}

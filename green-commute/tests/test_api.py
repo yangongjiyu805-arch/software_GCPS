@@ -58,6 +58,14 @@ def test_calculation_boundaries():
         with pytest.raises(BusinessError):calculate('bus',km)
     with pytest.raises(BusinessError):calculate('car',10)
 
+def test_server_carbon_calculation_contract(client):
+    for mode, expected in [('bus', 1100), ('metro', 1400), ('bike', 1800), ('walk', 1800)]:
+        r=client.get('/api/carbon/calculate',params={'mode':mode,'distance_km':'10'})
+        assert r.status_code==200
+        assert r.json()['saved_g']==expected
+        assert r.json()['points']==expected//100
+    assert client.get('/api/carbon/calculate',params={'mode':'car','distance_km':'10'}).status_code==400
+
 def test_trip_awards_and_ledger(client):
     h=login(client)
     r=trip(client,h)
@@ -155,6 +163,27 @@ def test_merchant_can_publish_product(client):
     payload={'name':'环保补贴券','description':'活动演示','category':'交通优惠','icon':'gift','cost':3,'stock':2}
     assert api(client,'post','/api/merchant/products',m,payload).status_code==201
     assert any(x['name']=='环保补贴券' for x in client.get('/api/products').json())
+
+def test_admin_can_create_merchant_and_filter_catalog(client):
+    admin=login(client,'admin')
+    created=api(client,'post','/api/admin/merchants',admin,{
+        'username':'newmerchant','display_name':'新商户','password':'merchant-pass-1'
+    })
+    assert created.status_code==201 and created.json()['role']=='merchant'
+    assert api(client,'post','/api/admin/merchants',admin,{
+        'username':'newmerchant','display_name':'重复商户','password':'merchant-pass-1'
+    }).status_code==409
+    merchants=api(client,'get','/api/merchants',admin).json()
+    new=next(x for x in merchants if x['display_name']=='新商户')
+    merchant=login(client,'newmerchant','merchant-pass-1')
+    product=api(client,'post','/api/merchant/products',merchant,{
+        'name':'新商户礼品','description':'测试商品','category':'生活好物','icon':'gift','cost':5,'stock':3
+    })
+    assert product.status_code==201
+    all_products=client.get('/api/products').json()
+    filtered=client.get('/api/products',params={'merchant_id':new['id']}).json()
+    assert any(p['name']=='新商户礼品' for p in all_products)
+    assert [p['name'] for p in filtered]==['新商户礼品']
 
 def test_atomic_stock_for_concurrent_requests(client):
     r=login(client)

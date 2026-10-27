@@ -24,6 +24,8 @@ class RegisterIn(BaseModel):
     username: str=Field(min_length=3,max_length=48,pattern=r'^[a-zA-Z0-9_]+$')
     display_name: str=Field(min_length=1,max_length=80)
     password: str=Field(min_length=8,max_length=128)
+class MerchantCreateIn(RegisterIn):
+    pass
 class TripIn(BaseModel):
     client_trip_id: str=Field(min_length=6,max_length=72,pattern=r'^[a-zA-Z0-9_-]+$')
     mode: str
@@ -136,6 +138,14 @@ def me(u:User=Depends(current_user),db:Session=Depends(get_db)):
 def rules():
     return {'baseline_g_per_km':180,'mode_g_per_km':{'bus':70,'metro':40,'bike':0,'walk':0},'points_per_kg':10,'rounding':'向下取整到整积分','note':'教学模拟系数，非官方碳核算认证数据'}
 
+@app.get('/api/carbon/calculate')
+def carbon_calculate(mode: str, distance_km: Decimal):
+    distance_m, saved_g, points = calculate(mode, distance_km)
+    mode_rate = {'bus':70,'metro':40,'bike':0,'walk':0}[mode]
+    return {'mode':mode,'distance_km':distance_m/1000,'baseline_g_per_km':180,
+            'mode_g_per_km':mode_rate,'saved_g':saved_g,'saved_kg':saved_g/1000,
+            'points':points,'formula':'floor(distance_m × (180 - mode_g_per_km) / 1000)'}
+
 @app.post('/api/trips')
 def add_trip(payload:TripIn,u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
     trip=submit_trip(db,u.id,payload.client_trip_id,payload.mode,payload.distance_km)
@@ -156,8 +166,16 @@ def wallet(u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
     return {'balance':u.balance,'transactions':[{'id':x.id,'kind':x.kind,'delta':x.delta,'description':x.description,'reference_id':x.reference_id,'created_at':x.created_at.isoformat()+'Z'} for x in rows]}
 
 @app.get('/api/products')
-def products(db:Session=Depends(get_db)):
-    return [serial_product(p) for p in db.scalars(select(Product).where(Product.active==True).order_by(Product.id)).all()]
+def products(merchant_id: int|None=None, db:Session=Depends(get_db)):
+    q=select(Product,User.display_name).join(User,User.id==Product.merchant_id).where(Product.active==True)
+    if merchant_id is not None:q=q.where(Product.merchant_id==merchant_id)
+    return [serial_product(p,name) for p,name in db.execute(q.order_by(Product.id)).all()]
+
+@app.get('/api/merchants')
+def merchants(db:Session=Depends(get_db)):
+    product_count=func.count(Product.id).filter(Product.active==True)
+    rows=db.execute(select(User,product_count).outerjoin(Product,Product.merchant_id==User.id).where(User.role=='merchant').group_by(User.id).order_by(User.id)).all()
+    return [{'id':u.id,'display_name':u.display_name,'product_count':count} for u,count in rows]
 
 @app.post('/api/redemptions')
 def create_redemption(payload:dict,u:User=Depends(require_role('resident')),db:Session=Depends(get_db)):
@@ -181,6 +199,19 @@ def merchant_products(u:User=Depends(require_role('merchant')),db:Session=Depend
 def add_product(payload:ProductIn,u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
     p=Product(merchant_id=u.id,**payload.model_dump());db.add(p);db.commit();db.refresh(p)
     return serial_product(p)
+
+@app.get('/api/admin/merchants')
+def admin_merchants(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
+    return merchants(db)
+
+@app.post('/api/admin/merchants',status_code=201)
+def add_merchant(payload:MerchantCreateIn,u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
+    if db.scalar(select(User).where(User.username==payload.username)):
+        raise HTTPException(status_code=409,detail='用户名已存在')
+    merchant=User(username=payload.username,display_name=payload.display_name,
+                  password_hash=hash_password(payload.password),role='merchant')
+    db.add(merchant);db.commit();db.refresh(merchant)
+    return serial_user(merchant)
 
 @app.get('/api/merchant/orders')
 def merchant_orders(u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
