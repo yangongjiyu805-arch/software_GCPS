@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 import json
 from sqlalchemy import select, update, func
 from sqlalchemy.exc import IntegrityError
-from .models import (User, Trip, PointTransaction, Product, Redemption, Settlement,
+from .models import (User, Trip, PointTransaction, Product, InventoryMovement, Redemption, Settlement,
                      OutboxEvent, EmissionRule, EmissionFactor, TripCalculation,
                      TripEvidence, utcnow)
 
@@ -123,10 +123,86 @@ def serial_trip_detail(t):
     return result
 
 def serial_product(p, merchant_name=None):
-    return {'id':p.id,'name':p.name,'description':p.description,'category':p.category,'icon':p.icon,'cost':p.cost,'stock':p.stock,'active':p.active,'merchant_id':p.merchant_id,'merchant_name':merchant_name}
+    stock_status='OUT_OF_STOCK' if p.stock==0 else 'LOW_STOCK' if p.stock<=5 else 'AVAILABLE'
+    return {'id':p.id,'name':p.name,'description':p.description,'category':p.category,'icon':p.icon,
+            'cost':p.cost,'stock':p.stock,'stock_status':stock_status,'active':p.active,
+            'merchant_id':p.merchant_id,'merchant_name':merchant_name}
+
+def serial_inventory_movement(item):
+    return {'id':item.id,'product_id':item.product_id,'kind':item.kind,
+            'operation_id':item.operation_id,'reference_id':item.reference_id,
+            'quantity':item.quantity,'before_stock':item.before_stock,
+            'after_stock':item.after_stock,'note':item.note,
+            'created_at':item.created_at.isoformat()+'Z'}
+
+def adjust_inventory(db,product_id,quantity,kind,operation_id,note,reference_id=None):
+    """Atomically change stock and record an idempotent inventory movement."""
+    if not isinstance(product_id,int) or isinstance(product_id,bool):
+        raise BusinessError('商品编号无效',422)
+    if not isinstance(quantity,int) or isinstance(quantity,bool) or quantity==0:
+        raise BusinessError('库存变动必须为非零整数',422)
+    if not operation_id or len(operation_id)>72:
+        raise BusinessError('库存操作编号无效',422)
+    existing=db.scalar(select(InventoryMovement).where(
+        InventoryMovement.operation_id==operation_id))
+    if existing:
+        if (existing.product_id,existing.quantity,existing.kind)!=(product_id,quantity,kind):
+            raise BusinessError('库存操作编号已被其他变更使用',409)
+        return existing
+    conditions=[Product.id==product_id]
+    if quantity<0:conditions.append(Product.stock>=-quantity)
+    changed=db.execute(update(Product).where(*conditions).values(stock=Product.stock+quantity))
+    if changed.rowcount!=1:
+        if db.get(Product,product_id) is None:raise BusinessError('商品不存在',404)
+        raise BusinessError('库存不足',409)
+    product=db.get(Product,product_id)
+    before=product.stock-quantity
+    movement=InventoryMovement(product_id=product_id,kind=kind,
+                               operation_id=operation_id,reference_id=reference_id,
+                               quantity=quantity,before_stock=before,
+                               after_stock=product.stock,note=note[:200])
+    db.add(movement)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        existing=db.scalar(select(InventoryMovement).where(
+            InventoryMovement.operation_id==operation_id))
+        if existing:return existing
+        raise BusinessError('库存操作编号冲突',409)
+    return movement
+
+def backfill_inventory_opening(db):
+    """Record opening snapshots for products created before inventory history existed."""
+    products=db.scalars(select(Product).order_by(Product.id)).all()
+    changed=False
+    for product in products:
+        if db.scalar(select(InventoryMovement.id).where(
+                InventoryMovement.product_id==product.id).limit(1)) is not None:
+            continue
+        if product.stock<=0:continue
+        db.add(InventoryMovement(product_id=product.id,kind='OPENING',
+                                 operation_id=f'legacy-opening-{product.id}',
+                                 quantity=product.stock,before_stock=0,
+                                 after_stock=product.stock,note='历史商品初始库存'))
+        changed=True
+    if changed:db.commit()
+    return changed
 
 def serial_redemption(r):
-    return {'id':r.id,'product_id':r.product_id,'product_name':r.product_name,'points':r.points,'status':r.status,'created_at':r.created_at.isoformat()+'Z'}
+    return {'id':r.id,'product_id':r.product_id,'product_name':r.product_name,'points':r.points,
+            'status':r.status,'created_at':r.created_at.isoformat()+'Z',
+            'updated_at':r.updated_at.isoformat()+'Z' if r.updated_at else None,
+            'fulfilled_at':r.fulfilled_at.isoformat()+'Z' if r.fulfilled_at else None,
+            'refunded_at':r.refunded_at.isoformat()+'Z' if r.refunded_at else None,
+            'can_refund':r.status=='TO_FULFILL'}
+
+def serial_settlement(item):
+    return {'redemption_id':item.redemption_id,'merchant_id':item.merchant_id,
+            'points':item.points,'status':item.status,
+            'created_at':item.created_at.isoformat()+'Z',
+            'settled_at':item.settled_at.isoformat()+'Z' if item.settled_at else None,
+            'cancelled_at':item.cancelled_at.isoformat()+'Z' if item.cancelled_at else None}
 
 def serial_point_transaction(item):
     return {'id':item.id,'kind':item.kind,'delta':item.delta,
@@ -233,11 +309,10 @@ def redeem(db,user_id,product_id):
     p=db.get(Product,product_id)
     if p is None or not p.active:raise BusinessError('商品不存在或已下架',404)
     try:
-        # Atomic conditional updates serialize competing debits / stock depletion.
-        stock=db.execute(update(Product).where(Product.id==p.id,Product.stock>=1,Product.active==True).values(stock=Product.stock-1))
-        if stock.rowcount!=1:raise BusinessError('商品库存不足',409)
         red=Redemption(user_id=user_id,product_id=p.id,product_name=p.name,points=p.cost)
         db.add(red);db.flush()
+        adjust_inventory(db,p.id,-1,'REDEMPTION',f'redemption-{red.id}',
+                         '兑换扣减库存',red.id)
         post_points(db,user_id,'REDEEM',red.id,-p.cost,'兑换 '+p.name)
         db.add(OutboxEvent(kind='RedemptionCreated',ref_id=red.id))
         db.commit()
@@ -254,8 +329,11 @@ def refund_redemption(db,user_id,redemption_id):
         PointTransaction.kind=='REFUND',PointTransaction.reference_id==red.id))
     if existing:
         red.status='REFUNDED'
+        red.refunded_at=red.refunded_at or utcnow()
+        red.updated_at=utcnow()
         settlement=db.get(Settlement,red.id)
-        if settlement and settlement.status!='SETTLED':settlement.status='CANCELLED'
+        if settlement and settlement.status!='SETTLED':
+            settlement.status='CANCELLED';settlement.cancelled_at=settlement.cancelled_at or utcnow()
         db.commit()
         return red
     if red.status!='TO_FULFILL':
@@ -263,15 +341,39 @@ def refund_redemption(db,user_id,redemption_id):
     product=db.get(Product,red.product_id)
     if product is None:raise BusinessError('原商品不存在，无法回补库存',409)
     try:
-        db.execute(update(Product).where(Product.id==product.id).values(stock=Product.stock+1))
+        adjust_inventory(db,product.id,1,'REFUND',f'refund-{red.id}',
+                         '退款回补库存',red.id)
         post_points(db,user_id,'REFUND',red.id,red.points,'兑换退款 '+red.product_name)
         red.status='REFUNDED'
+        red.refunded_at=utcnow();red.updated_at=red.refunded_at
         settlement=db.get(Settlement,red.id)
-        if settlement and settlement.status!='SETTLED':settlement.status='CANCELLED'
+        if settlement and settlement.status!='SETTLED':
+            settlement.status='CANCELLED';settlement.cancelled_at=utcnow()
         db.commit()
         return red
     except Exception:
         db.rollback();raise
+
+def fulfill_redemption(db,merchant_id,redemption_id):
+    red=db.get(Redemption,redemption_id)
+    settlement=db.get(Settlement,redemption_id)
+    if not red or not settlement or settlement.merchant_id!=merchant_id:
+        raise BusinessError('订单不存在',404)
+    if red.status=='FULFILLED':return red
+    if red.status!='TO_FULFILL':raise BusinessError('订单状态不允许核销',409)
+    red.status='FULFILLED';red.fulfilled_at=utcnow();red.updated_at=red.fulfilled_at
+    db.commit();db.refresh(red)
+    return red
+
+def settle_redemption(db,redemption_id):
+    settlement=db.get(Settlement,redemption_id)
+    if not settlement:raise BusinessError('清算单不存在',404)
+    red=db.get(Redemption,redemption_id)
+    if not red or red.status!='FULFILLED':raise BusinessError('商户尚未履约',409)
+    if settlement.status!='SETTLED':
+        settlement.status='SETTLED';settlement.settled_at=utcnow();settlement.cancelled_at=None
+        db.commit()
+    return settlement
 
 def process_pending(db, limit=100):
     """At-least-once delivery with idempotent consumers; DB transaction per event.
@@ -298,7 +400,8 @@ def process_pending(db, limit=100):
                     p=db.get(Product,red.product_id)
                     settlement=db.get(Settlement,red.id)
                     if not settlement:db.add(Settlement(redemption_id=red.id,merchant_id=p.merchant_id,points=red.points))
-                    if red.status=='PROCESSING':red.status='TO_FULFILL'
+                    if red.status=='PROCESSING':
+                        red.status='TO_FULFILL';red.updated_at=utcnow()
             else:
                 raise ValueError('Unknown event kind: '+e.kind)
             e.state='DONE';e.attempts+=1;e.error=None
@@ -317,4 +420,12 @@ def stats(db):
     grams=db.scalar(select(func.coalesce(func.sum(Trip.saved_g),0)).where(Trip.status=='AWARDED')) or 0
     points=db.scalar(select(func.coalesce(func.sum(Trip.points),0)).where(Trip.status=='AWARDED')) or 0
     redeems=db.scalar(select(func.count()).select_from(Redemption)) or 0
-    return {'trips':trips,'saved_kg':round(grams/1000,3),'issued_points':points,'redemptions':redeems}
+    fulfilled=db.scalar(select(func.count()).select_from(Redemption).where(Redemption.status=='FULFILLED')) or 0
+    refunded=db.scalar(select(func.count()).select_from(Redemption).where(Redemption.status=='REFUNDED')) or 0
+    pending_settlements=db.scalar(select(func.count()).select_from(Settlement).where(Settlement.status=='PENDING')) or 0
+    settled_points=db.scalar(select(func.coalesce(func.sum(Settlement.points),0)).where(Settlement.status=='SETTLED')) or 0
+    low_stock=db.scalar(select(func.count()).select_from(Product).where(Product.active==True,Product.stock<=5)) or 0
+    return {'trips':trips,'saved_kg':round(grams/1000,3),'issued_points':points,'redemptions':redeems,
+            'fulfilled_orders':fulfilled,'refunded_orders':refunded,
+            'pending_settlements':pending_settlements,'settled_points':settled_points,
+            'low_stock_products':low_stock}

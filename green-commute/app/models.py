@@ -107,6 +107,20 @@ class Product(Base):
     active: Mapped[bool]=mapped_column(Boolean,default=True)
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
 
+class InventoryMovement(Base):
+    __tablename__='inventory_movements'
+    __table_args__=(UniqueConstraint('operation_id',name='uq_inventory_operation'),)
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    product_id: Mapped[int]=mapped_column(ForeignKey('products.id'),index=True)
+    kind: Mapped[str]=mapped_column(String(24))
+    operation_id: Mapped[str]=mapped_column(String(72))
+    reference_id: Mapped[int|None]=mapped_column(Integer,nullable=True)
+    quantity: Mapped[int]=mapped_column(Integer)
+    before_stock: Mapped[int]=mapped_column(Integer)
+    after_stock: Mapped[int]=mapped_column(Integer)
+    note: Mapped[str]=mapped_column(String(200))
+    created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+
 class Redemption(Base):
     __tablename__='redemptions'
     id: Mapped[int]=mapped_column(primary_key=True)
@@ -116,6 +130,9 @@ class Redemption(Base):
     points: Mapped[int]=mapped_column(Integer)
     status: Mapped[str]=mapped_column(String(25),default='PROCESSING')
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+    updated_at: Mapped[datetime|None]=mapped_column(DateTime,default=utcnow,onupdate=utcnow,nullable=True)
+    fulfilled_at: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
+    refunded_at: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
 
 class Settlement(Base):
     __tablename__='settlements'
@@ -125,6 +142,7 @@ class Settlement(Base):
     status: Mapped[str]=mapped_column(String(20),default='PENDING')
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
     settled_at: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
+    cancelled_at: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
 
 class OutboxEvent(Base):
     __tablename__='outbox_events'

@@ -12,7 +12,7 @@ os.environ['DATABASE_URL']='sqlite:///'+str(TEST_DB)
 os.environ['JWT_SECRET']='test-secret-for-isolated-integration-suite'
 from app.db import Base,engine,SessionLocal
 from app.main import app
-from app.models import User,Trip,PointTransaction,OutboxEvent,Product
+from app.models import User,Trip,PointTransaction,InventoryMovement,OutboxEvent,Product
 from app.services import calculate,process_pending,BusinessError
 
 @pytest.fixture
@@ -102,6 +102,7 @@ def test_redemption_refund_returns_points_stock_and_auditable_entry(client):
     assert api(client,'get','/api/wallet',h).json()['balance']==21
     refund=api(client,'post',f"/api/redemptions/{red['id']}/refund",h)
     assert refund.status_code==200 and refund.json()['redemption']['status']=='REFUNDED'
+    assert refund.json()['redemption']['refunded_at'] is not None
     assert refund.json()['balance']==33
     assert client.get('/api/products').json()[0]['stock']==before_stock
     wallet=api(client,'get','/api/wallet',h).json()
@@ -109,6 +110,10 @@ def test_redemption_refund_returns_points_stock_and_auditable_entry(client):
     assert wallet['transactions'][0]['kind']=='REFUND'
     assert wallet['transactions'][0]['delta']==12 and wallet['transactions'][0]['balance_after']==33
     assert wallet['consistent'] is True
+    with SessionLocal() as db:
+        movements=db.query(InventoryMovement).filter_by(product_id=1).order_by(InventoryMovement.id).all()
+        assert [m.kind for m in movements[-2:]]==['REDEMPTION','REFUND']
+        assert movements[-2].quantity==-1 and movements[-1].quantity==1
     again=api(client,'post',f"/api/redemptions/{red['id']}/refund",h)
     assert again.status_code==200 and again.json()['balance']==33
     assert api(client,'get','/api/wallet',h).json()['transaction_count']==3
@@ -203,19 +208,50 @@ def test_full_merchant_fulfillment_settlement(client):
     trip(client,r,distance='50')
     red=api(client,'post','/api/redemptions',r,{'product_id':1}).json()['redemption']
     rid=red['id']
+    assert red['can_refund'] is True and red['updated_at'] is not None
     orders=api(client,'get','/api/merchant/orders',m).json()
     assert len(orders)==1 and orders[0]['settlement_status']=='PENDING'
     assert api(client,'post',f'/api/admin/settlements/{rid}/settle',a).status_code==409
-    assert api(client,'post',f'/api/merchant/orders/{rid}/fulfill',m).status_code==200
+    fulfilled=api(client,'post',f'/api/merchant/orders/{rid}/fulfill',m)
+    assert fulfilled.status_code==200 and fulfilled.json()['fulfilled_at'] is not None
     assert api(client,'post',f'/api/admin/settlements/{rid}/settle',a).status_code==200
     assert api(client,'post',f'/api/admin/settlements/{rid}/settle',a).status_code==200
     assert api(client,'get','/api/admin/settlements',a).json()[0]['status']=='SETTLED'
+    order=api(client,'get','/api/redemptions',r).json()[0]
+    assert order['status']=='FULFILLED' and order['fulfilled_at'] is not None and order['can_refund'] is False
 
 def test_merchant_can_publish_product(client):
     m=login(client,'merchant')
     payload={'name':'环保补贴券','description':'活动演示','category':'交通优惠','icon':'gift','cost':3,'stock':2}
     assert api(client,'post','/api/merchant/products',m,payload).status_code==201
     assert any(x['name']=='环保补贴券' for x in client.get('/api/products').json())
+
+def test_inventory_module_tracks_opening_adjustment_and_product_lifecycle(client):
+    merchant=login(client,'merchant')
+    products=api(client,'get','/api/merchant/products',merchant).json()
+    product=next(x for x in products if x['id']==1)
+    history=api(client,'get','/api/merchant/products/1/inventory',merchant).json()
+    assert history['product']['stock']==40
+    assert history['movements'][0]['kind']=='OPENING'
+    adjust=api(client,'post','/api/merchant/products/1/inventory',merchant,{
+        'operation_id':'restock-product-1','quantity':5,'note':'补充演示库存'})
+    assert adjust.status_code==200 and adjust.json()['product']['stock']==45
+    again=api(client,'post','/api/merchant/products/1/inventory',merchant,{
+        'operation_id':'restock-product-1','quantity':5,'note':'重复提交应幂等'})
+    assert again.status_code==200 and again.json()['product']['stock']==45
+    update=api(client,'patch','/api/merchant/products/1',merchant,{'name':'地铁单程体验券·更新版','active':False})
+    assert update.status_code==200 and update.json()['active'] is False
+    assert not any(x['id']==1 for x in client.get('/api/products').json())
+    reactivate=api(client,'patch','/api/merchant/products/1',merchant,{'active':True})
+    assert reactivate.status_code==200 and any(x['id']==1 for x in client.get('/api/products').json())
+    assert api(client,'get','/api/merchant/products/1/inventory',login(client)).status_code==403
+
+def test_inventory_adjustment_rejects_zero_and_overdraft(client):
+    merchant=login(client,'merchant')
+    assert api(client,'post','/api/merchant/products/1/inventory',merchant,{
+        'operation_id':'zero-stock-op','quantity':0,'note':'无效变更'}).status_code==422
+    assert api(client,'post','/api/merchant/products/1/inventory',merchant,{
+        'operation_id':'too-large-op','quantity':-41,'note':'超过现有库存'}).status_code==409
 
 def test_admin_can_create_merchant_and_filter_catalog(client):
     admin=login(client,'admin')

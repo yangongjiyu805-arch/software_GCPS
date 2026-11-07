@@ -28,15 +28,25 @@ def ensure_runtime_schema():
     requiring a separate migration command during the classroom demo.
     """
     inspector=inspect(engine)
-    if 'point_transactions' not in inspector.get_table_names():
-        return
-    columns={col['name'] for col in inspector.get_columns('point_transactions')}
-    if 'balance_after' not in columns:
-        with engine.begin() as conn:
-            conn.execute(text(
-                'ALTER TABLE point_transactions '
-                'ADD COLUMN balance_after INTEGER NOT NULL DEFAULT 0'
-            ))
+    tables=inspector.get_table_names()
+    additions={
+        'point_transactions':{'balance_after':'INTEGER NOT NULL DEFAULT 0'},
+        'redemptions':{
+            'updated_at':'DATETIME',
+            'fulfilled_at':'DATETIME',
+            'refunded_at':'DATETIME',
+        },
+        'settlements':{'cancelled_at':'DATETIME'},
+    }
+    with engine.begin() as conn:
+        for table,columns_to_add in additions.items():
+            if table not in tables:continue
+            columns={col['name'] for col in inspect(conn).get_columns(table)}
+            for column,definition in columns_to_add.items():
+                if column not in columns:
+                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {definition}'))
+        if 'redemptions' in tables:
+            conn.execute(text('UPDATE redemptions SET updated_at=created_at WHERE updated_at IS NULL'))
 
 def get_db():
     with SessionLocal() as session:

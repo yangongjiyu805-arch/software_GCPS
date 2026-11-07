@@ -12,15 +12,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .db import Base,engine,get_db,SessionLocal,ensure_runtime_schema
-from .models import (User, Trip, Product, PointTransaction, Redemption, Settlement,
+from .models import (User, Trip, Product, InventoryMovement, PointTransaction, Redemption, Settlement,
                      OutboxEvent, EmissionRule, SupportTicket, SupportMessage, utcnow)
 from .assistant_service import configuration, query_model
 from .security import create_token, decode_token, hash_password,verify_password
 from .services import (BusinessError, submit_trip,redeem,refund_redemption,process_pending,stats,serial_user,
-                       serial_trip,serial_product,serial_redemption,calculate,MODES,
-                       serial_trip,serial_trip_detail,serial_product,serial_redemption,
+                       serial_trip,serial_product,serial_redemption,serial_inventory_movement,
+                       adjust_inventory,backfill_inventory_opening,calculate,MODES,
+                       serial_trip,serial_trip_detail,serial_product,serial_redemption,serial_settlement,
                        serial_point_transaction,ledger_summary,backfill_ledger_snapshots,
-                       calculate,calculate_with_factors,MODES,ensure_default_rule,
+                       fulfill_redemption,settle_redemption,calculate,calculate_with_factors,MODES,ensure_default_rule,
                        get_active_rule,rule_snapshot,create_emission_rule)
 
 class LoginIn(BaseModel):
@@ -51,6 +52,17 @@ class ProductIn(BaseModel):
     icon: str=Field(default='gift',max_length=16)
     cost: int=Field(ge=1,le=100000)
     stock: int=Field(ge=0,le=100000)
+class ProductUpdateIn(BaseModel):
+    name: str|None=Field(default=None,min_length=2,max_length=90)
+    description: str|None=Field(default=None,max_length=300)
+    category: str|None=Field(default=None,max_length=40)
+    icon: str|None=Field(default=None,max_length=16)
+    cost: int|None=Field(default=None,ge=1,le=100000)
+    active: bool|None=None
+class InventoryAdjustIn(BaseModel):
+    operation_id: str=Field(min_length=6,max_length=72,pattern=r'^[a-zA-Z0-9_-]+$')
+    quantity: int=Field(ge=-100000,le=100000)
+    note: str=Field(min_length=2,max_length=200)
 class FulfillIn(BaseModel):
     status: str=Field(pattern='^(FULFILLED)$')
 
@@ -104,6 +116,7 @@ async def lifespan(app:FastAPI):
         ensure_default_rule(db)
         process_pending(db)
         backfill_ledger_snapshots(db)
+        backfill_inventory_opening(db)
     yield
 
 app=FastAPI(title='城市绿色出行积分系统',description='碳减排模拟、积分商城、客服工单与可选真实大模型',version='1.1.0',lifespan=lifespan)
@@ -259,8 +272,42 @@ def merchant_products(u:User=Depends(require_role('merchant')),db:Session=Depend
 
 @app.post('/api/merchant/products',status_code=201)
 def add_product(payload:ProductIn,u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
-    p=Product(merchant_id=u.id,**payload.model_dump());db.add(p);db.commit();db.refresh(p)
+    data=payload.model_dump()
+    opening=data.pop('stock')
+    p=Product(merchant_id=u.id,stock=0,**data);db.add(p);db.flush()
+    if opening:
+        adjust_inventory(db,p.id,opening,'OPENING',f'product-{p.id}','商品初始库存',p.id)
+    db.commit();db.refresh(p)
     return serial_product(p)
+
+@app.patch('/api/merchant/products/{product_id}')
+def update_product(product_id:int,payload:ProductUpdateIn,
+                   u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
+    p=db.get(Product,product_id)
+    if not p or p.merchant_id!=u.id:raise HTTPException(status_code=404,detail='商品不存在')
+    changes=payload.model_dump(exclude_unset=True)
+    if not changes:raise HTTPException(status_code=422,detail='没有可更新的商品字段')
+    for key,value in changes.items():setattr(p,key,value)
+    db.commit();db.refresh(p)
+    return serial_product(p)
+
+@app.post('/api/merchant/products/{product_id}/inventory')
+def change_inventory(product_id:int,payload:InventoryAdjustIn,
+                     u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
+    p=db.get(Product,product_id)
+    if not p or p.merchant_id!=u.id:raise HTTPException(status_code=404,detail='商品不存在')
+    movement=adjust_inventory(db,product_id,payload.quantity,'ADJUSTMENT',payload.operation_id,payload.note)
+    db.commit();db.refresh(p)
+    return {'product':serial_product(p),'movement':serial_inventory_movement(movement)}
+
+@app.get('/api/merchant/products/{product_id}/inventory')
+def inventory_history(product_id:int,limit:int=Query(default=100,ge=1,le=200),
+                      u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
+    p=db.get(Product,product_id)
+    if not p or p.merchant_id!=u.id:raise HTTPException(status_code=404,detail='商品不存在')
+    rows=db.scalars(select(InventoryMovement).where(InventoryMovement.product_id==product_id)
+                    .order_by(InventoryMovement.id.desc()).limit(limit)).all()
+    return {'product':serial_product(p),'movements':[serial_inventory_movement(x) for x in rows]}
 
 @app.get('/api/admin/merchants')
 def admin_merchants(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
@@ -278,14 +325,13 @@ def add_merchant(payload:MerchantCreateIn,u:User=Depends(require_role('admin')),
 @app.get('/api/merchant/orders')
 def merchant_orders(u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
     rows=db.execute(select(Redemption,Settlement).join(Settlement,Settlement.redemption_id==Redemption.id).where(Settlement.merchant_id==u.id).order_by(Redemption.id.desc())).all()
-    return [{'redemption':serial_redemption(r),'settlement_status':s.status} for r,s in rows]
+    return [{'redemption':serial_redemption(r),'settlement':serial_settlement(s),
+             'settlement_status':s.status} for r,s in rows]
 
 @app.post('/api/merchant/orders/{redemption_id}/fulfill')
 def fulfill(redemption_id:int,u:User=Depends(require_role('merchant')),db:Session=Depends(get_db)):
-    r=db.get(Redemption,redemption_id);s=db.get(Settlement,redemption_id)
-    if not r or not s or s.merchant_id!=u.id:raise HTTPException(status_code=404,detail='订单不存在')
-    if r.status not in ('TO_FULFILL','FULFILLED'):raise HTTPException(status_code=409,detail='订单状态不允许核销')
-    r.status='FULFILLED';db.commit();return {'ok':True,'status':r.status}
+    r=fulfill_redemption(db,u.id,redemption_id)
+    return {'ok':True,'status':r.status,'fulfilled_at':r.fulfilled_at.isoformat()+'Z' if r.fulfilled_at else None}
 
 @app.get('/api/admin/stats')
 def platform_stats(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
@@ -297,16 +343,12 @@ def platform_stats(u:User=Depends(require_role('admin')),db:Session=Depends(get_
 @app.get('/api/admin/settlements')
 def settlements(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
     rows=db.scalars(select(Settlement).order_by(Settlement.redemption_id.desc())).all()
-    return [{'redemption_id':s.redemption_id,'merchant_id':s.merchant_id,'points':s.points,'status':s.status,'settled_at':s.settled_at.isoformat()+'Z' if s.settled_at else None} for s in rows]
+    return [serial_settlement(s) for s in rows]
 
 @app.post('/api/admin/settlements/{redemption_id}/settle')
 def settle(redemption_id:int,u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
-    s=db.get(Settlement,redemption_id)
-    if not s:raise HTTPException(status_code=404,detail='清算单不存在')
-    r=db.get(Redemption,redemption_id)
-    if r.status!='FULFILLED':raise HTTPException(status_code=409,detail='商户尚未履约')
-    if s.status!='SETTLED':s.status='SETTLED';s.settled_at=utcnow();db.commit()
-    return {'ok':True,'status':s.status}
+    s=settle_redemption(db,redemption_id)
+    return {'ok':True,'status':s.status,'settled_at':s.settled_at.isoformat()+'Z' if s.settled_at else None}
 
 @app.post('/api/admin/events/process')
 def process_events(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
