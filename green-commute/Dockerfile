@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /opt/greengo
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt 'pymysql>=1.1,<2'
+RUN pip install --no-cache-dir -r requirements.txt 'pymysql[rsa]>=1.1,<2'
 COPY app ./app
 COPY scripts ./scripts
 EXPOSE 8000

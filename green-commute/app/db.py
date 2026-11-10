@@ -1,6 +1,6 @@
 """Database setup. SQLite is the zero-config local profile; set DATABASE_URL for MySQL."""
 import os
-from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy import create_engine, event, inspect, select, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./green_commute.db')
@@ -21,15 +21,12 @@ class Base(DeclarativeBase):
     pass
 
 def ensure_runtime_schema():
-    """Apply the small additive migrations needed by the zero-config profile.
+    """Upgrade old databases in place. Web, worker and the upgrade command share this path."""
+    from .models import MerchantCategory, Product
 
-    The project intentionally keeps deployment lightweight, so an additive ledger
-    column is upgraded at startup for existing SQLite/MySQL databases instead of
-    requiring a separate migration command during the classroom demo.
-    """
-    inspector=inspect(engine)
-    tables=inspector.get_table_names()
     additions={
+        'users':{'enabled':'BOOLEAN NOT NULL DEFAULT 1',
+                 'session_version':'INTEGER NOT NULL DEFAULT 0'},
         'point_transactions':{'balance_after':'INTEGER NOT NULL DEFAULT 0'},
         'redemptions':{
             'updated_at':'DATETIME',
@@ -38,15 +35,43 @@ def ensure_runtime_schema():
         },
         'settlements':{'cancelled_at':'DATETIME'},
     }
-    with engine.begin() as conn:
-        for table,columns_to_add in additions.items():
-            if table not in tables:continue
-            columns={col['name'] for col in inspect(conn).get_columns(table)}
-            for column,definition in columns_to_add.items():
-                if column not in columns:
-                    conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {definition}'))
-        if 'redemptions' in tables:
+    with engine.connect() as conn:
+        mysql=conn.dialect.name in ('mysql', 'mariadb')
+        lock_name="CONCAT('greengo-schema-',MD5(DATABASE()))"
+        if conn.dialect.name=='sqlite':
+            conn.exec_driver_sql('BEGIN IMMEDIATE')
+        elif mysql and conn.scalar(text(f'SELECT GET_LOCK({lock_name},30)'))!=1:
+            raise RuntimeError('Could not lock the GreenGo database for upgrade')
+        try:
+            Base.metadata.create_all(conn)
+            for table,columns_to_add in additions.items():
+                columns={col['name'] for col in inspect(conn).get_columns(table)}
+                for column,definition in columns_to_add.items():
+                    if column not in columns:
+                        conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {definition}'))
             conn.execute(text('UPDATE redemptions SET updated_at=created_at WHERE updated_at IS NULL'))
+
+            products=Product.__table__
+            categories=MerchantCategory.__table__
+            legacy=conn.execute(select(products.c.id,products.c.merchant_id,products.c.category)
+                                .order_by(products.c.id)).all()
+            canonical_names={}
+            for product_id,merchant_id,old_name in legacy:
+                name=old_name.strip() or '生活好物'
+                key=(merchant_id,name)
+                if key not in canonical_names:
+                    existing=conn.scalar(select(categories.c.name).where(
+                        categories.c.merchant_id==merchant_id,categories.c.name==name))
+                    if existing is None:
+                        conn.execute(categories.insert().values(merchant_id=merchant_id,name=name))
+                    canonical_names[key]=existing or name
+                canonical=canonical_names[key]
+                if canonical!=old_name:
+                    conn.execute(products.update().where(products.c.id==product_id).values(category=canonical))
+            conn.commit()
+        finally:
+            if mysql:
+                conn.execute(text(f'SELECT RELEASE_LOCK({lock_name})'))
 
 def get_db():
     with SessionLocal() as session:

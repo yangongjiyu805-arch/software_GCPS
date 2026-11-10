@@ -98,21 +98,127 @@
       "get": {
         "summary": "Me",
         "operationId": "me_api_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/rules": {
+      "get": {
+        "summary": "Rules",
+        "operationId": "rules_api_rules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/rules": {
+      "get": {
+        "summary": "Admin Rules",
+        "operationId": "admin_rules_api_admin_rules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Add Emission Rule",
+        "operationId": "add_emission_rule_api_admin_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmissionRuleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/carbon/calculate": {
+      "get": {
+        "summary": "Carbon Calculate",
+        "operationId": "carbon_calculate_api_carbon_calculate_get",
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
+            "name": "mode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mode"
+            }
+          },
+          {
+            "name": "distance_km",
+            "in": "query",
+            "required": true,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "number"
                 },
                 {
-                  "type": "null"
+                  "type": "string"
                 }
               ],
-              "title": "Authorization"
+              "title": "Distance Km"
             }
           }
         ],
@@ -138,10 +244,10 @@
         }
       }
     },
-    "/api/rules": {
+    "/api/trips": {
       "get": {
-        "summary": "Rules",
-        "operationId": "rules_api_rules_get",
+        "summary": "My Trips",
+        "operationId": "my_trips_api_trips_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -151,40 +257,25 @@
               }
             }
           }
-        }
-      }
-    },
-    "/api/trips": {
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
       "post": {
         "summary": "Add Trip",
         "operationId": "add_trip_api_trips_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/TripIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -205,26 +296,31 @@
               }
             }
           }
-        }
-      },
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/trips/{trip_id}": {
       "get": {
-        "summary": "My Trips",
-        "operationId": "my_trips_api_trips_get",
+        "summary": "Trip Detail",
+        "operationId": "trip_detail_api_trips__trip_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
+            "name": "trip_id",
+            "in": "path",
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
+              "type": "integer",
+              "title": "Trip Id"
             }
           }
         ],
@@ -254,21 +350,99 @@
       "get": {
         "summary": "Wallet",
         "operationId": "wallet_api_wallet_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "integer",
+                  "minimum": 1
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Before Id"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "income",
+                "expense"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Direction"
+            }
+          },
+          {
+            "name": "timezone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "UTC",
+              "title": "Timezone"
             }
           }
         ],
@@ -298,52 +472,29 @@
       "get": {
         "summary": "Products",
         "operationId": "products_api_products_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
+        "security": [
+          {
+            "HTTPBearer": []
           }
-        }
-      }
-    },
-    "/api/redemptions": {
-      "post": {
-        "summary": "Create Redemption",
-        "operationId": "create_redemption_api_redemptions_post",
+        ],
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "merchant_id",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "integer"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Merchant Id"
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true,
-                "title": "Payload"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -364,25 +515,150 @@
             }
           }
         }
-      },
+      }
+    },
+    "/api/merchants": {
+      "get": {
+        "summary": "Merchants",
+        "operationId": "merchants_api_merchants_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/redemptions": {
       "get": {
         "summary": "My Redemptions",
         "operationId": "my_redemptions_api_redemptions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Create Redemption",
+        "operationId": "create_redemption_api_redemptions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/redemptions/{redemption_id}": {
+      "get": {
+        "summary": "My Redemption Detail",
+        "operationId": "my_redemption_detail_api_redemptions__redemption_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
+            "name": "redemption_id",
+            "in": "path",
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
+              "type": "integer",
+              "title": "Redemption Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              ],
-              "title": "Authorization"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/redemptions/{redemption_id}/refund": {
+      "post": {
+        "summary": "Refund My Redemption",
+        "operationId": "refund_my_redemption_api_redemptions__redemption_id__refund_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "redemption_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Redemption Id"
             }
           }
         ],
@@ -412,21 +688,253 @@
       "get": {
         "summary": "Merchant Products",
         "operationId": "merchant_products_api_merchant_products_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Add Product",
+        "operationId": "add_product_api_merchant_products_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/merchant/categories": {
+      "get": {
+        "summary": "Merchant Categories",
+        "operationId": "merchant_categories_api_merchant_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Add Category",
+        "operationId": "add_category_api_merchant_categories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/merchant/products/{product_id}": {
+      "patch": {
+        "summary": "Update Product",
+        "operationId": "update_product_api_merchant_products__product_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductUpdateIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/merchant/products/{product_id}/inventory": {
+      "post": {
+        "summary": "Change Inventory",
+        "operationId": "change_inventory_api_merchant_products__product_id__inventory_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryAdjustIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Inventory History",
+        "operationId": "inventory_history_api_merchant_products__product_id__inventory_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Product Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
             }
           }
         ],
@@ -450,25 +958,165 @@
             }
           }
         }
+      }
+    },
+    "/api/admin/merchants": {
+      "get": {
+        "summary": "Admin Merchants",
+        "operationId": "admin_merchants_api_admin_merchants_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       },
       "post": {
-        "summary": "Add Product",
-        "operationId": "add_product_api_merchant_products_post",
+        "summary": "Add Merchant",
+        "operationId": "add_merchant_api_admin_merchants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/accounts": {
+      "get": {
+        "summary": "Admin Accounts",
+        "operationId": "admin_accounts_api_admin_accounts_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
-            "name": "authorization",
-            "in": "header",
+            "name": "role",
+            "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
+                  "enum": [
+                    "resident",
+                    "merchant"
+                  ],
                   "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Authorization"
+              "title": "Role"
+            }
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 48,
+              "default": "",
+              "title": "Username"
+            }
+          },
+          {
+            "name": "enabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/accounts/{account_id}": {
+      "patch": {
+        "summary": "Update Account",
+        "operationId": "update_account_api_admin_accounts__account_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Account Id"
             }
           }
         ],
@@ -477,13 +1125,65 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ProductIn"
+                "$ref": "#/components/schemas/AccountUpdateIn"
               }
             }
           }
         },
         "responses": {
-          "201": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/accounts/{account_id}/reset-password": {
+      "post": {
+        "summary": "Reset Account Password",
+        "operationId": "reset_account_password_api_admin_accounts__account_id__reset_password_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Account Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
@@ -508,24 +1208,6 @@
       "get": {
         "summary": "Merchant Orders",
         "operationId": "merchant_orders_api_merchant_orders_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -534,24 +1216,24 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/merchant/orders/{redemption_id}/fulfill": {
       "post": {
         "summary": "Fulfill",
         "operationId": "fulfill_api_merchant_orders__redemption_id__fulfill_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "redemption_id",
@@ -560,22 +1242,6 @@
             "schema": {
               "type": "integer",
               "title": "Redemption Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
             }
           }
         ],
@@ -605,24 +1271,6 @@
       "get": {
         "summary": "Platform Stats",
         "operationId": "platform_stats_api_admin_stats_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -631,42 +1279,19 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/admin/settlements": {
       "get": {
         "summary": "Settlements",
         "operationId": "settlements_api_admin_settlements_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -675,24 +1300,24 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/admin/settlements/{redemption_id}/settle": {
       "post": {
         "summary": "Settle",
         "operationId": "settle_api_admin_settlements__redemption_id__settle_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "redemption_id",
@@ -701,22 +1326,6 @@
             "schema": {
               "type": "integer",
               "title": "Redemption Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
             }
           }
         ],
@@ -746,24 +1355,6 @@
       "post": {
         "summary": "Process Events",
         "operationId": "process_events_api_admin_events_process_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -772,42 +1363,19 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/support/tickets": {
       "get": {
         "summary": "List Support Tickets",
         "operationId": "list_support_tickets_api_support_tickets_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -816,49 +1384,26 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       },
       "post": {
         "summary": "Open Support Ticket",
         "operationId": "open_support_ticket_api_support_tickets_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/TicketCreateIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "201": {
@@ -879,13 +1424,23 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/support/tickets/{ticket_id}": {
       "get": {
         "summary": "Support Ticket Detail",
         "operationId": "support_ticket_detail_api_support_tickets__ticket_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "ticket_id",
@@ -894,22 +1449,6 @@
             "schema": {
               "type": "integer",
               "title": "Ticket Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
             }
           }
         ],
@@ -939,6 +1478,11 @@
       "post": {
         "summary": "Support Reply",
         "operationId": "support_reply_api_support_tickets__ticket_id__messages_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "ticket_id",
@@ -947,22 +1491,6 @@
             "schema": {
               "type": "integer",
               "title": "Ticket Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
             }
           }
         ],
@@ -1002,6 +1530,11 @@
       "patch": {
         "summary": "Set Support Status",
         "operationId": "set_support_status_api_support_tickets__ticket_id__status_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "parameters": [
           {
             "name": "ticket_id",
@@ -1010,22 +1543,6 @@
             "schema": {
               "type": "integer",
               "title": "Ticket Id"
-            }
-          },
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
             }
           }
         ],
@@ -1065,24 +1582,6 @@
       "get": {
         "summary": "Assistant Config",
         "operationId": "assistant_config_api_assistant_config_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1091,51 +1590,28 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/assistant/chat": {
       "post": {
         "summary": "Assistant Chat",
         "operationId": "assistant_chat_api_assistant_chat_post",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
-            }
-          }
-        ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AssistantChatIn"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -1156,12 +1632,61 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     }
   },
   "components": {
     "schemas": {
+      "AccountUpdateIn": {
+        "properties": {
+          "username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 48,
+                "minLength": 3,
+                "pattern": "^[a-zA-Z0-9_]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "AccountUpdateIn"
+      },
       "AssistantChatIn": {
         "properties": {
           "message": {
@@ -1184,6 +1709,21 @@
           "message"
         ],
         "title": "AssistantChatIn"
+      },
+      "CategoryIn": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CategoryIn"
       },
       "ChatTurn": {
         "properties": {
@@ -1209,6 +1749,51 @@
         ],
         "title": "ChatTurn"
       },
+      "EmissionRuleIn": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9._-]+$",
+            "title": "Version"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 2,
+            "title": "Name"
+          },
+          "baseline_g_per_km": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 1.0,
+            "title": "Baseline G Per Km"
+          },
+          "points_per_kg": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Points Per Kg"
+          },
+          "mode_g_per_km": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Mode G Per Km"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "name",
+          "baseline_g_per_km",
+          "points_per_kg",
+          "mode_g_per_km"
+        ],
+        "title": "EmissionRuleIn"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1221,6 +1806,36 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InventoryAdjustIn": {
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "maxLength": 72,
+            "minLength": 6,
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "title": "Operation Id"
+          },
+          "quantity": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": -100000.0,
+            "title": "Quantity"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "operation_id",
+          "quantity",
+          "note"
+        ],
+        "title": "InventoryAdjustIn"
       },
       "LoginIn": {
         "properties": {
@@ -1240,6 +1855,51 @@
         ],
         "title": "LoginIn"
       },
+      "MerchantCreateIn": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 48,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9_]+$",
+            "title": "Username"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "display_name",
+          "password"
+        ],
+        "title": "MerchantCreateIn"
+      },
+      "PasswordResetIn": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "PasswordResetIn"
+      },
       "ProductIn": {
         "properties": {
           "name": {
@@ -1257,6 +1917,7 @@
           "category": {
             "type": "string",
             "maxLength": 40,
+            "minLength": 1,
             "title": "Category",
             "default": "生活好物"
           },
@@ -1287,6 +1948,86 @@
         ],
         "title": "ProductIn"
       },
+      "ProductUpdateIn": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 90,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          }
+        },
+        "type": "object",
+        "title": "ProductUpdateIn"
+      },
       "RegisterIn": {
         "properties": {
           "username": {
@@ -1295,12 +2036,6 @@
             "minLength": 3,
             "pattern": "^[a-zA-Z0-9_]+$",
             "title": "Username"
-          },
-          "display_name": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Display Name"
           },
           "password": {
             "type": "string",
@@ -1312,7 +2047,6 @@
         "type": "object",
         "required": [
           "username",
-          "display_name",
           "password"
         ],
         "title": "RegisterIn"
@@ -1403,11 +2137,33 @@
                 "type": "number"
               },
               {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+                "type": "string"
               }
             ],
             "title": "Distance Km"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "simulated",
+              "imported",
+              "partner"
+            ],
+            "title": "Source",
+            "default": "simulated"
+          },
+          "evidence_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Reference"
           }
         },
         "type": "object",
@@ -1457,6 +2213,12 @@
           "type"
         ],
         "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

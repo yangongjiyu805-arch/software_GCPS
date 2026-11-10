@@ -27,8 +27,9 @@ def ensure_default_rule(db):
     rule=db.scalar(select(EmissionRule).where(EmissionRule.version==DEFAULT_RULE_VERSION))
     changed=False
     if rule is None:
-        rule=EmissionRule(version=DEFAULT_RULE_VERSION,name='GreenGo 教学模拟规则',
-                          baseline_g_per_km=BASELINE_G_PER_KM,points_per_kg=10,active=True)
+        rule=EmissionRule(version=DEFAULT_RULE_VERSION,name='GreenGo 基准排放规则',
+                          baseline_g_per_km=BASELINE_G_PER_KM,points_per_kg=10,active=True,
+                          effective_from=utcnow().replace(microsecond=0))
         db.add(rule);db.flush();changed=True
     existing={x.mode:x for x in rule.factors}
     for mode,grams in TRANSPORT_G_PER_KM.items():
@@ -55,7 +56,8 @@ def create_emission_rule(db, version, name, baseline_g_per_km, points_per_kg, fa
         raise BusinessError('减排基准和积分比例必须为正数')
     if db.scalar(select(EmissionRule).where(EmissionRule.version==version)):
         raise BusinessError('规则版本已存在',409)
-    now=utcnow()
+    # MySQL DATETIME may round fractional seconds into the future.
+    now=utcnow().replace(microsecond=0)
     try:
         db.execute(update(EmissionRule).where(EmissionRule.active==True).values(active=False,effective_to=now))
         rule=EmissionRule(version=version,name=name,baseline_g_per_km=baseline_g_per_km,
@@ -99,8 +101,12 @@ def calculate(mode:str, distance_km: Decimal):
     """Backward-compatible calculation using the default teaching rule."""
     return calculate_with_factors(mode,distance_km,BASELINE_G_PER_KM,TRANSPORT_G_PER_KM.get(mode,-1),10)
 
+def account_name(user):
+    return user.username if user.role=='resident' else user.display_name
+
 def serial_user(user):
-    return {'id':user.id,'username':user.username,'display_name':user.display_name,'role':user.role,'balance':user.balance}
+    return {'id':user.id,'username':user.username,'display_name':account_name(user),
+            'role':user.role,'balance':user.balance,'enabled':user.enabled}
 
 def serial_trip(t):
     calc=getattr(t,'calculation',None)
@@ -156,6 +162,7 @@ def adjust_inventory(db,product_id,quantity,kind,operation_id,note,reference_id=
         if db.get(Product,product_id) is None:raise BusinessError('商品不存在',404)
         raise BusinessError('库存不足',409)
     product=db.get(Product,product_id)
+    db.refresh(product,attribute_names=['stock'])
     before=product.stock-quantity
     movement=InventoryMovement(product_id=product_id,kind=kind,
                                operation_id=operation_id,reference_id=reference_id,
@@ -168,7 +175,8 @@ def adjust_inventory(db,product_id,quantity,kind,operation_id,note,reference_id=
         db.rollback()
         existing=db.scalar(select(InventoryMovement).where(
             InventoryMovement.operation_id==operation_id))
-        if existing:return existing
+        if existing and (existing.product_id,existing.quantity,existing.kind)==(product_id,quantity,kind):
+            return existing
         raise BusinessError('库存操作编号冲突',409)
     return movement
 
@@ -233,6 +241,7 @@ def post_points(db,user_id,kind,reference_id,delta,description):
     if changed.rowcount!=1:
         raise BusinessError('积分余额不足',409)
     user=db.get(User,user_id)
+    db.refresh(user,attribute_names=['balance'])
     entry=PointTransaction(user_id=user_id,kind=kind,reference_id=reference_id,
                            delta=delta,balance_after=user.balance,
                            description=description[:200])
@@ -306,8 +315,9 @@ def submit_trip(db,user_id,client_trip_id,mode,distance_km,source='simulated',ev
     return trip
 
 def redeem(db,user_id,product_id):
-    p=db.get(Product,product_id)
-    if p is None or not p.active:raise BusinessError('商品不存在或已下架',404)
+    p=db.scalar(select(Product).join(User,User.id==Product.merchant_id).where(
+        Product.id==product_id,Product.active.is_(True),User.enabled.is_(True)))
+    if p is None:raise BusinessError('商品不存在或已下架',404)
     try:
         red=Redemption(user_id=user_id,product_id=p.id,product_name=p.name,points=p.cost)
         db.add(red);db.flush()
@@ -325,8 +335,10 @@ def refund_redemption(db,user_id,redemption_id):
     red=db.get(Redemption,redemption_id)
     if red is None or red.user_id!=user_id:
         raise BusinessError('兑换订单不存在',404)
+    if red.status=='REFUNDED':
+        return red
     existing=db.scalar(select(PointTransaction).where(
-        PointTransaction.kind=='REFUND',PointTransaction.reference_id==red.id))
+        PointTransaction.kind=='REFUND',PointTransaction.reference_id==red.id,PointTransaction.user_id==user_id))
     if existing:
         red.status='REFUNDED'
         red.refunded_at=red.refunded_at or utcnow()
@@ -341,14 +353,21 @@ def refund_redemption(db,user_id,redemption_id):
     product=db.get(Product,red.product_id)
     if product is None:raise BusinessError('原商品不存在，无法回补库存',409)
     try:
+        now=utcnow()
+        claimed=db.execute(update(Redemption).where(
+            Redemption.id==redemption_id,Redemption.user_id==user_id,Redemption.status=='TO_FULFILL')
+            .values(status='REFUNDED',refunded_at=now,updated_at=now))
+        if claimed.rowcount!=1:
+            db.rollback()
+            if red.status=='REFUNDED':
+                return red
+            raise BusinessError('当前订单状态不允许退款',409)
         adjust_inventory(db,product.id,1,'REFUND',f'refund-{red.id}',
                          '退款回补库存',red.id)
         post_points(db,user_id,'REFUND',red.id,red.points,'兑换退款 '+red.product_name)
-        red.status='REFUNDED'
-        red.refunded_at=utcnow();red.updated_at=red.refunded_at
         settlement=db.get(Settlement,red.id)
         if settlement and settlement.status!='SETTLED':
-            settlement.status='CANCELLED';settlement.cancelled_at=utcnow()
+            settlement.status='CANCELLED';settlement.cancelled_at=now
         db.commit()
         return red
     except Exception:
@@ -360,8 +379,15 @@ def fulfill_redemption(db,merchant_id,redemption_id):
     if not red or not settlement or settlement.merchant_id!=merchant_id:
         raise BusinessError('订单不存在',404)
     if red.status=='FULFILLED':return red
-    if red.status!='TO_FULFILL':raise BusinessError('订单状态不允许核销',409)
-    red.status='FULFILLED';red.fulfilled_at=utcnow();red.updated_at=red.fulfilled_at
+    now=utcnow()
+    claimed=db.execute(update(Redemption).where(
+        Redemption.id==redemption_id,Redemption.status=='TO_FULFILL')
+        .values(status='FULFILLED',fulfilled_at=now,updated_at=now))
+    if claimed.rowcount!=1:
+        db.rollback()
+        if red.status=='FULFILLED':
+            return red
+        raise BusinessError('订单状态不允许核销',409)
     db.commit();db.refresh(red)
     return red
 

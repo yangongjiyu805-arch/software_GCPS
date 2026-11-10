@@ -18,9 +18,10 @@ def verify_password(password: str, stored: str) -> bool:
         return hmac.compare_digest(candidate,base64.b64decode(digest))
     except (ValueError,TypeError):return False
 
-def create_token(user_id: int) -> str:
+def create_token(user_id: int, session_version: int) -> str:
     now=datetime.now(timezone.utc)
-    return jwt.encode({'sub':str(user_id),'iat':now,'exp':now+timedelta(hours=12)},JWT_SECRET,algorithm='HS256')
+    return jwt.encode({'sub':str(user_id),'ver':session_version,'iat':now,'exp':now+timedelta(hours=12)},JWT_SECRET,algorithm='HS256')
 
-def decode_token(token: str) -> int:
-    return int(jwt.decode(token,JWT_SECRET,algorithms=['HS256'])['sub'])
+def decode_token(token: str) -> tuple[int, int]:
+    payload=jwt.decode(token,JWT_SECRET,algorithms=['HS256'])
+    return int(payload['sub']), int(payload.get('ver', 0))

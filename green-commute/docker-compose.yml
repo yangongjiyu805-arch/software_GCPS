@@ -16,8 +16,13 @@ services:
     ports: ["127.0.0.1:8000:8000"]
     environment:
       DATABASE_URL: mysql+pymysql://greengo:${MYSQL_PASSWORD:-dev-password-change-me}@db:3306/green_commute?charset=utf8mb4
-      JWT_SECRET: ${JWT_SECRET:-change-me-local-demo-only}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-0}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-Demo@123456}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
     depends_on:
       db: {condition: service_healthy}
     restart: unless-stopped
@@ -26,7 +31,7 @@ services:
     command: ["python","-m","scripts.worker"]
     environment:
       DATABASE_URL: mysql+pymysql://greengo:${MYSQL_PASSWORD:-dev-password-change-me}@db:3306/green_commute?charset=utf8mb4
-      JWT_SECRET: ${JWT_SECRET:-change-me-local-demo-only}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
     depends_on:
       db: {condition: service_healthy}
     restart: unless-stopped

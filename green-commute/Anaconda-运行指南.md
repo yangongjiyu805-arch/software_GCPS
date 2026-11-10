@@ -36,6 +36,8 @@ conda activate greengo
 
 ```bat
 set "JWT_SECRET=greengo-course-local-only-change-before-deployment"
+python -m scripts.upgrade_db
+python -m scripts.create_admin site_admin
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -44,7 +46,9 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 - 系统页面：`http://127.0.0.1:8000/`
 - REST API 文档：`http://127.0.0.1:8000/docs`
 
-三组演示账号：`resident` / `merchant` / `admin`，密码均为 `Demo@123456`。本项目默认 SQLite，无需安装 MySQL。压缩包自带的 `green_commute.db` 是已录入业务数据的演示数据库；如想重置，在停止服务后执行 `del green_commute.db`，再重新启动，数据库会重建为初始状态。**重置会删除你自己新增的数据，请先备份。**
+首次启动时使用上面的 `create_admin` 命令创建管理员。已有管理员时可跳过该命令。居民从网页注册，商户由管理员创建。默认使用 SQLite，数据库首次启动时初始化结构和基础排放规则。
+
+需要在本机跑旧演示脚本时，先切换到单独的测试库，设置 `set "DATABASE_URL=sqlite:///./greengo-demo.db"` 和 `set "SEED_DEMO_DATA=1"`，再启动服务。空库才会加载 `resident`、`merchant`、`admin`（默认密码 `Demo@123456`）及测试商品。详见 [启动与升级](README.md#1-启动与首次管理员)。
 
 停止运行：按 **Ctrl+C**。
 

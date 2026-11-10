@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, DateTime, ForeignKey, UniqueConstraint, Text, Boolean
+from sqlalchemy import String, Integer, DateTime, ForeignKey, UniqueConstraint, Text, Boolean, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -14,6 +14,8 @@ class User(Base):
     display_name: Mapped[str]=mapped_column(String(80))
     role: Mapped[str]=mapped_column(String(15),default='resident')
     balance: Mapped[int]=mapped_column(Integer,default=0)
+    enabled: Mapped[bool]=mapped_column(Boolean,default=True,server_default=text('1'))
+    session_version: Mapped[int]=mapped_column(Integer,default=0,server_default=text('0'))
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
 
 class Trip(Base):
@@ -93,6 +95,13 @@ class PointTransaction(Base):
     balance_after: Mapped[int]=mapped_column(Integer,default=0)
     description: Mapped[str]=mapped_column(String(200))
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+
+class MerchantCategory(Base):
+    __tablename__='merchant_categories'
+    __table_args__=(UniqueConstraint('merchant_id','name',name='uq_merchant_category_name'),)
+    id: Mapped[int]=mapped_column(primary_key=True)
+    merchant_id: Mapped[int]=mapped_column(ForeignKey('users.id'))
+    name: Mapped[str]=mapped_column(String(40))
 
 class Product(Base):
     __tablename__='products'

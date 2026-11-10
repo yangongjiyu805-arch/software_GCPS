@@ -16,12 +16,16 @@ def test_login_is_hidden_on_success_and_restored_on_logout():
     assert 'id="login-page"' in html
     assert "$('#login-page').hidden=true" in script
     assert "$('#login-page').hidden=false" in script
-    assert "await openPage(state.user.role" in script
+    assert "await openPage(rolePages[state.user.role][0])" in script
+    assert 'id="username" name="username" required' in html
+    assert 'id="password" name="password" type="password" required' in html
+    assert 'demo-switch' not in html and 'Demo@123456' not in html
 
 
 def test_login_sets_user_header_for_all_roles():
     script = (STATIC / "app.js").read_text(encoding="utf-8")
-    assert "state.user=result.user;showUser();" in script
+    assert "state.user=result.user" in script
+    assert "showUser();" in script
     assert "$('#logout').hidden=false" in script
 
 def test_register_and_marketplace_merchant_filters_exist():
@@ -34,4 +38,5 @@ def test_register_and_marketplace_merchant_filters_exist():
 def test_admin_merchant_creation_is_wired():
     script = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "'/admin/merchants'" in script
-    assert "商户账号" in script
+    assert "title:'新增商户'" in script
+    assert "dialog.showModal()" in script

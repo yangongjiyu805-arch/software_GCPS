@@ -1,22 +1,18 @@
 """Contract, business-rule, security and end-to-end tests against a real SQLite DB."""
-import os
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from uuid import uuid4
-from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-TEST_DB=Path(tempfile.gettempdir())/('greengo-tests-'+uuid4().hex+'.db')
-os.environ['DATABASE_URL']='sqlite:///'+str(TEST_DB)
-os.environ['JWT_SECRET']='test-secret-for-isolated-integration-suite'
 from app.db import Base,engine,SessionLocal
 from app.main import app
 from app.models import User,Trip,PointTransaction,InventoryMovement,OutboxEvent,Product
 from app.services import calculate,process_pending,BusinessError
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    monkeypatch.setenv('ENVIRONMENT','test')
+    monkeypatch.setenv('SEED_DEMO_DATA','1')
+    monkeypatch.setenv('DEMO_PASSWORD','Demo@123456')
     Base.metadata.drop_all(engine)
     with TestClient(app) as c:
         yield c
@@ -43,7 +39,7 @@ def test_login_wrong_credentials(client):
     assert client.get('/api/me').status_code==401
 
 def test_register_role_and_duplicate_username(client):
-    body={'username':'freshperson','display_name':'新用户','password':'very-secure-456'}
+    body={'username':'freshperson','password':'very-secure-456'}
     r=client.post('/api/auth/register',json=body)
     assert r.status_code==201 and r.json()['user']['role']=='resident'
     assert client.post('/api/auth/register',json=body).status_code==409
@@ -97,14 +93,14 @@ def test_wallet_summary_snapshots_and_cursor_pagination(client):
 def test_redemption_refund_returns_points_stock_and_auditable_entry(client):
     h=login(client)
     trip(client,h,distance='30')  # 33 points
-    before_stock=client.get('/api/products').json()[0]['stock']
+    before_stock=client.get('/api/products',headers=h).json()[0]['stock']
     red=api(client,'post','/api/redemptions',h,{'product_id':1}).json()['redemption']
     assert api(client,'get','/api/wallet',h).json()['balance']==21
     refund=api(client,'post',f"/api/redemptions/{red['id']}/refund",h)
     assert refund.status_code==200 and refund.json()['redemption']['status']=='REFUNDED'
     assert refund.json()['redemption']['refunded_at'] is not None
     assert refund.json()['balance']==33
-    assert client.get('/api/products').json()[0]['stock']==before_stock
+    assert client.get('/api/products',headers=h).json()[0]['stock']==before_stock
     wallet=api(client,'get','/api/wallet',h).json()
     assert wallet['total_earned']==45 and wallet['total_spent']==12
     assert wallet['transactions'][0]['kind']=='REFUND'
@@ -168,7 +164,7 @@ def test_redemption_success_and_atomic_ledger(client):
     w=api(client,'get','/api/wallet',h).json()
     assert sorted(t['delta'] for t in w['transactions'])==[-12,33]
     assert sum(t['delta'] for t in w['transactions'])==w['balance']
-    assert client.get('/api/products').json()[0]['stock']==39
+    assert client.get('/api/products',headers=h).json()[0]['stock']==39
 
 def test_sold_out_does_not_charge(client):
     h=login(client)
@@ -224,7 +220,7 @@ def test_merchant_can_publish_product(client):
     m=login(client,'merchant')
     payload={'name':'环保补贴券','description':'活动演示','category':'交通优惠','icon':'gift','cost':3,'stock':2}
     assert api(client,'post','/api/merchant/products',m,payload).status_code==201
-    assert any(x['name']=='环保补贴券' for x in client.get('/api/products').json())
+    assert any(x['name']=='环保补贴券' for x in client.get('/api/products',headers=login(client)).json())
 
 def test_inventory_module_tracks_opening_adjustment_and_product_lifecycle(client):
     merchant=login(client,'merchant')
@@ -241,9 +237,9 @@ def test_inventory_module_tracks_opening_adjustment_and_product_lifecycle(client
     assert again.status_code==200 and again.json()['product']['stock']==45
     update=api(client,'patch','/api/merchant/products/1',merchant,{'name':'地铁单程体验券·更新版','active':False})
     assert update.status_code==200 and update.json()['active'] is False
-    assert not any(x['id']==1 for x in client.get('/api/products').json())
+    assert not any(x['id']==1 for x in client.get('/api/products',headers=login(client)).json())
     reactivate=api(client,'patch','/api/merchant/products/1',merchant,{'active':True})
-    assert reactivate.status_code==200 and any(x['id']==1 for x in client.get('/api/products').json())
+    assert reactivate.status_code==200 and any(x['id']==1 for x in client.get('/api/products',headers=login(client)).json())
     assert api(client,'get','/api/merchant/products/1/inventory',login(client)).status_code==403
 
 def test_inventory_adjustment_rejects_zero_and_overdraft(client):
@@ -262,15 +258,15 @@ def test_admin_can_create_merchant_and_filter_catalog(client):
     assert api(client,'post','/api/admin/merchants',admin,{
         'username':'newmerchant','display_name':'重复商户','password':'merchant-pass-1'
     }).status_code==409
-    merchants=api(client,'get','/api/merchants',admin).json()
+    merchants=api(client,'get','/api/admin/merchants',admin).json()
     new=next(x for x in merchants if x['display_name']=='新商户')
     merchant=login(client,'newmerchant','merchant-pass-1')
     product=api(client,'post','/api/merchant/products',merchant,{
         'name':'新商户礼品','description':'测试商品','category':'生活好物','icon':'gift','cost':5,'stock':3
     })
     assert product.status_code==201
-    all_products=client.get('/api/products').json()
-    filtered=client.get('/api/products',params={'merchant_id':new['id']}).json()
+    all_products=client.get('/api/products',headers=login(client)).json()
+    filtered=client.get('/api/products',headers=login(client),params={'merchant_id':new['id']}).json()
     assert any(p['name']=='新商户礼品' for p in all_products)
     assert [p['name'] for p in filtered]==['新商户礼品']
 
