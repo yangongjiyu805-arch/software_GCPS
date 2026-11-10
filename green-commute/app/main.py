@@ -140,7 +140,7 @@ async def lifespan(app:FastAPI):
         backfill_inventory_opening(db)
     yield
 
-app=FastAPI(title='城市绿色出行积分系统',description='碳减排模拟、积分商城、客服工单与可选真实大模型',version='1.1.0',lifespan=lifespan)
+app=FastAPI(title='城市绿色出行积分系统',description='碳减排模拟、积分商城、客服工单与可选真实大模型',version='1.2.0',lifespan=lifespan)
 
 @app.middleware('http')
 async def prevent_api_caching(request,call_next):
@@ -175,7 +175,7 @@ def require_role(*roles):
     return wrapped
 
 @app.get('/api/health')
-def health():return {'ok':True,'service':'green-commute','version':'1.1.0'}
+def health():return {'ok':True,'service':'green-commute','version':app.version}
 
 @app.post('/api/auth/login')
 def login(payload:LoginIn,db:Session=Depends(get_db)):
