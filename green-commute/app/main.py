@@ -56,6 +56,9 @@ class EmailCodeRequestIn(BaseModel):
 class EmailLoginIn(BaseModel):
     email: EmailAddress
     code: EmailCodeValue
+class EmailRegisterIn(BaseModel):
+    email: EmailAddress
+    code: EmailCodeValue
 class MerchantCreateIn(BaseModel):
     username: Username
     display_name: StoreName
@@ -235,32 +238,51 @@ def send_email_login_code(payload:EmailCodeRequestIn,db:Session=Depends(get_db))
     db.commit()
     return {'ok':True,'expires_in':CODE_TTL_SECONDS,'cooldown':CODE_COOLDOWN_SECONDS}
 
-@app.post('/api/auth/email/login')
-def email_login(payload:EmailLoginIn,db:Session=Depends(get_db)):
-    email=normalize_email(payload.email)
+def consume_email_code(db:Session,email:str,code:str):
     code_row=db.scalar(select(EmailCode).where(EmailCode.email==email,EmailCode.used_at.is_(None))
                        .order_by(EmailCode.created_at.desc(),EmailCode.id.desc()))
     now=utcnow()
     if code_row is None or code_row.expires_at<=now or code_row.attempts>=CODE_MAX_ATTEMPTS:
         raise HTTPException(status_code=401,detail='验证码无效或已过期')
-    if not hmac.compare_digest(code_row.code_hash,code_digest(email,payload.code)):
+    if not hmac.compare_digest(code_row.code_hash,code_digest(email,code)):
         code_row.attempts+=1
         db.commit()
         raise HTTPException(status_code=401,detail='验证码错误')
     code_row.used_at=now
-    u=db.scalar(select(User).where(User.email==email))
-    if u is None:
-        local=re.sub(r'[^a-zA-Z0-9_]+','_',email.split('@',1)[0]).strip('_')[:24] or 'user'
-        username=f'email_{local}_{secrets.token_hex(4)}'[:48]
-        u=User(username=username,email=email,display_name=local[:80] or '居民',
-               password_hash=hash_password(secrets.token_urlsafe(32)),role='resident',balance=0)
-        db.add(u)
-    elif not u.enabled:
-        db.commit()
-        raise HTTPException(status_code=403,detail='账号已停用，请联系管理员')
+    return now
+
+def email_session_response(db:Session,u:User):
     db.commit()
     db.refresh(u)
     return {'access_token':create_token(u.id,u.session_version),'token_type':'bearer','user':serial_user(u)}
+
+@app.post('/api/auth/email/register',status_code=201)
+def email_register(payload:EmailRegisterIn,db:Session=Depends(get_db)):
+    email=normalize_email(payload.email)
+    if db.scalar(select(User).where(User.email==email)):
+        raise HTTPException(status_code=409,detail='该邮箱已注册，请直接登录')
+    consume_email_code(db,email,payload.code)
+    local=re.sub(r'[^a-zA-Z0-9_]+','_',email.split('@',1)[0]).strip('_')[:24] or 'user'
+    username=f'email_{local}_{secrets.token_hex(4)}'[:48]
+    u=User(username=username,email=email,display_name=local[:80] or '居民',
+           password_hash=hash_password(secrets.token_urlsafe(32)),role='resident',balance=0)
+    db.add(u)
+    try:
+        return email_session_response(db,u)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409,detail='邮箱注册冲突，请重新获取验证码') from exc
+
+@app.post('/api/auth/email/login')
+def email_login(payload:EmailLoginIn,db:Session=Depends(get_db)):
+    email=normalize_email(payload.email)
+    u=db.scalar(select(User).where(User.email==email))
+    if u is None:
+        raise HTTPException(status_code=404,detail='该邮箱尚未注册，请先进行邮箱注册')
+    if not u.enabled:
+        raise HTTPException(status_code=403,detail='账号已停用，请联系管理员')
+    consume_email_code(db,email,payload.code)
+    return email_session_response(db,u)
 
 @app.get('/api/me')
 def me(u:User=Depends(current_user),db:Session=Depends(get_db)):

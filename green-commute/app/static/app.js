@@ -3,7 +3,7 @@ const $=selector=>document.querySelector(selector);
 const state={token:sessionStorage.getItem('gg_token'),user:null,page:null,session:0,controller:new AbortController(),aiHistory:[],aiDraft:'',aiRequest:null,selectedSupportId:null};
 const icons={dashboard:'◫',journey:'↗',mall:'◇',wallet:'▤',orders:'▣',merchant:'▦',admin:'⚙',accounts:'◉'};
 const names={dashboard:'我的概览',journey:'记录出行',mall:'积分商城',wallet:'积分账本',orders:'我的兑换',
-  merchant:'商户工作台',admin:'运营管理',accounts:'账号管理'};
+  merchant:'商户工作台',admin:'运营管理',accounts:'账号管理',profile:'个人信息'};
 const rolePages={
   resident:['dashboard','journey','mall','wallet','orders','support','assistant'],
   merchant:['merchant','support','assistant'],
@@ -61,8 +61,8 @@ function logout(){
   setAuthTab('login');
   $('#login-page').hidden=false;
   $('#logout').hidden=true;
+  $('#profile-trigger').hidden=true;
   $('#top-name').textContent='访客';
-  $('#top-avatar').textContent='G';
   $('#crumb-title').textContent='登录';
   clearTimeout(toastTimer);
   $('#toast').textContent='';
@@ -75,10 +75,16 @@ function menu(){
 }
 
 function showUser(){
-  const displayName=state.user.role==='resident'?state.user.username:state.user.display_name;
+  const displayName=userDisplayName(state.user);
   $('#top-name').textContent=displayName;
-  $('#top-avatar').textContent=displayName.charAt(0).toUpperCase();
+  $('#profile-trigger').hidden=false;
   $('#logout').hidden=false;
+}
+
+function userDisplayName(user=state.user){
+  if(!user)return '访客';
+  if(user.email)return user.email.split('@',1)[0]||'邮箱用户';
+  return user.display_name||user.username||'用户';
 }
 
 async function refreshUser(){
@@ -87,7 +93,7 @@ async function refreshUser(){
 }
 
 async function openPage(page){
-  if(!state.user || !rolePages[state.user.role].includes(page))return;
+  if(!state.user || (page!=='profile' && !rolePages[state.user.role].includes(page)))return;
   state.page=page;
   menu();
   $('#sidebar').classList.remove('open');
@@ -106,7 +112,7 @@ const head=(tag,title,sub,right='')=>`<div class="page-head"><div><div class="ey
 const stat=(label,val,caption,icon)=>`<div class="stat-card"><div class="stat-top"><span class="stat-title">${label}</span><span class="stat-icon">${icon}</span></div><div class="stat-value">${val}</div><div class="stat-caption">${caption}</div></div>`;
 const modeZh={bus:'公交车',metro:'地铁',bike:'骑行',walk:'步行'};
 const render={
- async dashboard(){await refreshUser();const [trips,data]=await Promise.all([api('/trips'),api('/wallet')]);const total=trips.reduce((s,t)=>s+t.saved_kg,0);const dist=trips.reduce((s,t)=>s+t.distance_km,0);const days=[];for(let i=6;i>=0;i--){let d=new Date;d.setDate(d.getDate()-i);days.push({key:d.toISOString().slice(0,10),label:['日','一','二','三','四','五','六'][d.getDay()],val:0})}for(const t of trips){let d=days.find(x=>x.key===t.created_at.slice(0,10));if(d)d.val+=t.points}const max=Math.max(...days.map(d=>d.val),1);$('#dashboard').innerHTML=head('YOUR IMPACT','早上好，'+safe(state.user.display_name)+' 👋','今天也为低碳城市贡献一份力量吧。','<span class="pill">✳ 绿色行动者</span>')+`<div class="hero"><div><div class="eyebrow" style="color:#b6dc9b">A GREENER CITY STARTS WITH YOU</div><h2>绿色出行，不止于抵达。<br>让环保成为日常习惯。</h2><p>记录公交、地铁、骑行或步行，累计您的减碳成果。</p><button class="button-light" id="hero-go">＋ 记录一段绿色出行 ↗</button></div><div class="hero-right"><div class="big-leaf">❧</div></div></div><div class="cards">${stat('当前可用积分',fmt(data.balance),'每次绿色出行均可累积','✳')}${stat('近期行程减碳',total.toFixed(2)+' <small style="font-size:13px">kg</small>','CO₂e 估算值','☘')}${stat('绿色行程',fmt(trips.length),'最近最多 100 条','↗')}${stat('近期绿色里程',dist.toFixed(1)+' <small style="font-size:13px">km</small>','已完成绿色出行里程','◇')}</div><div class="split"><div class="surface"><div class="surface-title"><h3>近 7 天积分趋势</h3><button class="link" id="chart-detail">查看记录 ↗</button></div><p class="sub">日常低碳行动，积少成多</p><div class="chart-wrap">${days.map(d=>`<div class="chart-col"><div class="bar" title="${d.val} 积分" style="height:${Math.max(3,d.val/max*115)}px"></div><div class="chart-label">周${d.label}</div></div>`).join('')}</div></div><div class="surface"><div class="surface-title"><h3>低碳小贴士</h3><span class="tag">ECO TIP</span></div><div class="tips"><strong>公交与骑行，让每公里更有意义。</strong><p>减排量根据行程记录和当时生效的排放规则估算。积分和减排量可在行程记录中核对。</p></div><p class="hint" style="margin-top:20px">已累计获得积分 <strong>${fmt(data.total_earned)}</strong>，累计支出积分 <strong>${fmt(data.total_spent)}</strong>。</p></div></div>`;$('#hero-go').onclick=()=>openPage('journey');$('#chart-detail').onclick=()=>openPage('wallet')},
+ async dashboard(){await refreshUser();const [trips,data]=await Promise.all([api('/trips'),api('/wallet')]);const total=trips.reduce((s,t)=>s+t.saved_kg,0);const dist=trips.reduce((s,t)=>s+t.distance_km,0);const days=[];for(let i=6;i>=0;i--){let d=new Date;d.setDate(d.getDate()-i);days.push({key:d.toISOString().slice(0,10),label:['日','一','二','三','四','五','六'][d.getDay()],val:0})}for(const t of trips){let d=days.find(x=>x.key===t.created_at.slice(0,10));if(d)d.val+=t.points}const max=Math.max(...days.map(d=>d.val),1);$('#dashboard').innerHTML=head('YOUR IMPACT','早上好，'+safe(userDisplayName())+' 👋','今天也为低碳城市贡献一份力量吧。','<span class="pill">✳ 绿色行动者</span>')+`<div class="hero"><div><div class="eyebrow" style="color:#b6dc9b">A GREENER CITY STARTS WITH YOU</div><h2>绿色出行，不止于抵达。<br>让环保成为日常习惯。</h2><p>记录公交、地铁、骑行或步行，累计您的减碳成果。</p><button class="button-light" id="hero-go">＋ 记录一段绿色出行 ↗</button></div><div class="hero-right"><div class="big-leaf">❧</div></div></div><div class="cards">${stat('当前可用积分',fmt(data.balance),'每次绿色出行均可累积','✳')}${stat('近期行程减碳',total.toFixed(2)+' <small style="font-size:13px">kg</small>','CO₂e 估算值','☘')}${stat('绿色行程',fmt(trips.length),'最近最多 100 条','↗')}${stat('近期绿色里程',dist.toFixed(1)+' <small style="font-size:13px">km</small>','已完成绿色出行里程','◇')}</div><div class="split"><div class="surface"><div class="surface-title"><h3>近 7 天积分趋势</h3><button class="link" id="chart-detail">查看记录 ↗</button></div><p class="sub">日常低碳行动，积少成多</p><div class="chart-wrap">${days.map(d=>`<div class="chart-col"><div class="bar" title="${d.val} 积分" style="height:${Math.max(3,d.val/max*115)}px"></div><div class="chart-label">周${d.label}</div></div>`).join('')}</div></div><div class="surface"><div class="surface-title"><h3>低碳小贴士</h3><span class="tag">ECO TIP</span></div><div class="tips"><strong>公交与骑行，让每公里更有意义。</strong><p>减排量根据行程记录和当时生效的排放规则估算。积分和减排量可在行程记录中核对。</p></div><p class="hint" style="margin-top:20px">已累计获得积分 <strong>${fmt(data.total_earned)}</strong>，累计支出积分 <strong>${fmt(data.total_spent)}</strong>。</p></div></div>`;$('#hero-go').onclick=()=>openPage('journey');$('#chart-detail').onclick=()=>openPage('wallet')},
  async orders(){const rows=await api('/redemptions');$('#orders').innerHTML=head('REDEMPTION HISTORY','我的兑换','查询已兑换的商品与当前商户履约状态。')+`<div class="surface"><h3>兑换订单</h3><p class="sub">兑换、履约和退款都会同步记录积分账本</p><div class="table-scroll"><table class="table"><thead><tr><th>订单编号</th><th>商品</th><th>兑换时间</th><th>消耗积分</th><th>状态</th></tr></thead><tbody>${rows.map(r=>`<tr><td>#${r.id}</td><td>${safe(r.product_name)}</td><td>${time(r.created_at)}</td><td class="minus">-${r.points}</td><td><span class="status ${r.status==='TO_FULFILL'?'pending':''}">${r.status==='FULFILLED'?'已核销':r.status==='TO_FULFILL'?'待商户核销':r.status==='REFUNDED'?'已退款':'处理中'}</span>${r.status==='TO_FULFILL'?` <button class="small-action" data-refund="${r.id}">申请退款</button>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">暂无兑换订单</td></tr>'}</tbody></table></div></div>`;$('#orders').querySelectorAll('[data-refund]').forEach(b=>b.onclick=async()=>{if(!confirm('确认退回这笔兑换并返还积分吗？'))return;b.disabled=true;try{const x=await api(`/redemptions/${b.dataset.refund}/refund`,'POST');toast(`退款成功，当前余额 ${x.balance} 积分`);await openPage('orders')}catch(e){toast(e.message);b.disabled=false}})},
 async admin(){
   const [st,settlements,merchants,events]=await Promise.all([
@@ -298,6 +304,50 @@ render.wallet=async function(){
   previous.onclick=()=>loadPage(cursors.slice(0,-1));
   next.onclick=()=>loadPage([...cursors,nextCursor]);
   await loadPage([null]);
+};
+
+render.profile=async function(){
+  await refreshUser();
+  const user=state.user;
+  const displayName=userDisplayName(user);
+  const roleLabels={resident:'居民账号',merchant:'商户账号',admin:'管理员账号'};
+  const loginMethod=user.email?'邮箱验证码登录':'用户名密码登录';
+  const homePage=rolePages[user.role][0];
+  $('#profile').innerHTML=head('ACCOUNT PROFILE','个人信息','查看账号身份、登录方式和当前使用状态。')+`
+    <div class="profile-layout">
+      <section class="surface profile-identity-card">
+        <div class="profile-identity-main">
+          <div class="profile-avatar-large" aria-hidden="true"><span class="person-icon person-icon-large"></span></div>
+          <div><div class="eyebrow">GREEN ACCOUNT</div><h2>${safe(displayName)}</h2><p>${safe(roleLabels[user.role]||'平台账号')} · 账号 #${user.id}</p></div>
+        </div>
+        <span class="profile-status ${user.enabled?'':'profile-status-disabled'}"><span class="online-dot"></span>${user.enabled?'账号正常':'账号已停用'}</span>
+      </section>
+      <div class="profile-grid">
+        <section class="surface">
+          <div class="surface-title"><h3>账号资料</h3><span class="tag">PROFILE</span></div>
+          <div class="profile-details">
+            <div class="profile-detail"><span>显示名称</span><strong>${safe(displayName)}</strong></div>
+            <div class="profile-detail"><span>系统用户名</span><strong>${safe(user.username)}</strong></div>
+            <div class="profile-detail"><span>绑定邮箱</span><strong>${safe(user.email||'未绑定邮箱')}</strong></div>
+            <div class="profile-detail"><span>账号角色</span><strong>${safe(roleLabels[user.role]||user.role)}</strong></div>
+            <div class="profile-detail"><span>账号编号</span><strong>#${user.id}</strong></div>
+            ${user.role==='resident'?`<div class="profile-detail"><span>当前积分</span><strong class="profile-points">${fmt(user.balance)} 积分</strong></div>`:''}
+          </div>
+        </section>
+        <section class="surface profile-security-card">
+          <div class="surface-title"><h3>登录与安全</h3><span class="tag">SECURITY</span></div>
+          <div class="profile-method"><span class="profile-method-icon">${user.email?'✉':'🔒'}</span><div><strong>${loginMethod}</strong><p>${user.email?'验证码单次使用，邮箱验证后即可登录。':'使用用户名和密码登录，账号数据会持续保存在平台中。'}</p></div></div>
+          <hr class="line">
+          <p class="hint">请妥善保管登录邮箱和密码。管理员停用账号后，该账号的旧会话会立即失效。</p>
+        </section>
+      </div>
+      <section class="surface profile-actions-card">
+        <div><h3>快捷操作</h3><p class="sub">继续使用青行，查看你的低碳成果。</p></div>
+        <div class="profile-actions"><button class="outline" type="button" id="profile-home">返回${safe(names[homePage])}</button><button class="primary" type="button" id="profile-logout">退出登录</button></div>
+      </section>
+    </div>`;
+  $('#profile-home').onclick=()=>openPage(homePage);
+  $('#profile-logout').onclick=logout;
 };
 
 function openFormDialog({title,fields,submitLabel='保存',save,complete,dialog=$('#form-dialog')}){
@@ -591,8 +641,12 @@ function setAuthTab(mode){
   $('.auth-tabs').querySelectorAll('[data-auth]').forEach(tab=>tab.classList.toggle('active',tab.dataset.auth===mode));
   $('#login-form').hidden=mode!=='login';
   $('#register-form').hidden=mode!=='register';
-  $('#email-form').hidden=mode!=='email';
-  const copy={login:['登录青行','WELCOME BACK','请输入用户名和密码'],register:['创建居民账户','JOIN GREENGO','注册后可记录出行并兑换积分'],email:['邮箱验证码登录','EMAIL LOGIN','输入邮箱，获取验证码后登录']}[mode];
+  const emailMode=mode==='email-register'?'register':mode==='email-login'?'login':null;
+  $('#email-form').hidden=!emailMode;
+  $('#email-form').dataset.mode=emailMode||'';
+  $('#email-submit').innerHTML=emailMode==='register'?'邮箱注册 <span>↗</span>':'邮箱登录 <span>↗</span>';
+  $('#email-hint').textContent=emailMode==='register'?'验证码默认打印在服务端控制台，配置 SMTP 后才会发送到邮箱。注册成功后可使用邮箱登录。':'验证码默认打印在服务端控制台，配置 SMTP 后才会发送到邮箱。未注册邮箱请先选择“邮箱注册”。';
+  const copy={login:['登录青行','WELCOME BACK','请输入用户名和密码'],register:['创建居民账户','JOIN GREENGO','注册后可记录出行并兑换积分'],'email-register':['邮箱注册','EMAIL REGISTER','输入邮箱，获取验证码后创建居民账户'],'email-login':['邮箱登录','EMAIL LOGIN','输入已注册邮箱，获取验证码后登录']}[mode];
   $('#auth-title').textContent=copy[0];
   $('#auth-eyebrow').textContent=copy[1];
   $('#auth-subtitle').textContent=copy[2];
@@ -606,7 +660,7 @@ function startSession(result){
   showUser();
 }
 
-for(const [id,path] of [['login-form','/auth/login'],['register-form','/auth/register'],['email-form','/auth/email/login']]){
+for(const [id,path] of [['login-form','/auth/login'],['register-form','/auth/register']]){
   const form=document.getElementById(id);
   form.onsubmit=async event=>{
     event.preventDefault();
@@ -615,12 +669,27 @@ for(const [id,path] of [['login-form','/auth/login'],['register-form','/auth/reg
     try{
       const result=await api(path,'POST',Object.fromEntries(new FormData(form)));
       startSession(result);
-      toast(path==='/auth/register'?'注册成功':path==='/auth/email/login'?'邮箱登录成功':'欢迎回来，'+state.user.display_name);
+      toast(path==='/auth/register'?'注册成功':path==='/auth/email/login'?'邮箱登录成功':'欢迎回来，'+userDisplayName());
       await openPage(rolePages[state.user.role][0]);
     }catch(error){toast(error.message)}
     finally{button.disabled=false}
   };
 }
+$('#email-form').onsubmit=async event=>{
+  event.preventDefault();
+  const form=event.currentTarget;
+  const mode=form.dataset.mode||'login';
+  const path=mode==='register'?'/auth/email/register':'/auth/email/login';
+  const button=event.submitter;
+  button.disabled=true;
+  try{
+    const result=await api(path,'POST',Object.fromEntries(new FormData(form)));
+    startSession(result);
+    toast(mode==='register'?'邮箱注册成功':'邮箱登录成功');
+    await openPage(rolePages[state.user.role][0]);
+  }catch(error){toast(error.message)}
+  finally{button.disabled=false}
+};
 $('.auth-tabs').querySelectorAll('[data-auth]').forEach(tab=>tab.onclick=()=>setAuthTab(tab.dataset.auth));
 let codeTimer;
 $('#send-email-code').onclick=async()=>{
@@ -643,6 +712,7 @@ $('#send-email-code').onclick=async()=>{
   }catch(error){button.disabled=false;toast(error.message)}
 };
 $('#logout').onclick=logout;
+$('#profile-trigger').onclick=()=>openPage('profile');
 $('#mobile-menu').onclick=()=>$('#sidebar').classList.toggle('open');
 $('#today').textContent=new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'long',day:'numeric'}).format(new Date());
 if(state.token){

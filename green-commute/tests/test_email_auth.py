@@ -1,8 +1,9 @@
-"""Optional email-code authentication keeps the password flow intact."""
+"""Optional email registration and login keep the password flow intact."""
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
-from datetime import timedelta
 from app.db import Base, SessionLocal, engine
 from app.main import app
 from app.models import EmailCode, User, utcnow
@@ -30,50 +31,63 @@ def email_sender(monkeypatch):
     return sent
 
 
-def test_email_code_creates_resident_and_is_one_time(client, email_sender):
-    address = '  New.User@Example.COM '
-    requested = client.post('/api/auth/email/send-code', json={'email': address})
-    assert requested.status_code == 200
-    code = email_sender['new.user@example.com']
-    logged_in = client.post('/api/auth/email/login', json={'email': address, 'code': code})
-    assert logged_in.status_code == 200, logged_in.text
-    body = logged_in.json()
-    assert body['token_type'] == 'bearer'
-    assert body['user']['role'] == 'resident'
-    assert body['user']['email'] == 'new.user@example.com'
-    assert client.post('/api/auth/email/login', json={'email': address, 'code': code}).status_code == 401
+def age_latest_code(email):
     with SessionLocal() as db:
-        user = db.query(User).filter_by(email='new.user@example.com').one()
-        assert user.role == 'resident'
-
-
-def test_email_code_wrong_attempts_and_existing_user(client, email_sender):
-    address = 'returning@example.com'
-    assert client.post('/api/auth/email/send-code', json={'email': address}).status_code == 200
-    code = email_sender[address]
-    wrong_code = '000000' if code != '000000' else '999999'
-    for _ in range(4):
-        assert client.post('/api/auth/email/login', json={'email': address, 'code': wrong_code}).status_code == 401
-    assert client.post('/api/auth/email/login', json={'email': address, 'code': code}).status_code == 200
-    with SessionLocal() as db:
-        row = db.query(EmailCode).filter_by(email=address).order_by(EmailCode.id.desc()).first()
-        row.created_at = utcnow() - timedelta(seconds=61)
+        row=db.query(EmailCode).filter_by(email=email).order_by(EmailCode.id.desc()).first()
+        row.created_at=utcnow()-timedelta(seconds=61)
         db.commit()
-    assert client.post('/api/auth/email/send-code', json={'email': address}).status_code == 200
-    again = client.post('/api/auth/email/login', json={'email': address, 'code': email_sender[address]})
-    assert again.status_code == 200
+
+
+def test_email_register_then_existing_email_login(client, email_sender):
+    address='  New.User@Example.COM '
+    assert client.post('/api/auth/email/send-code',json={'email':address}).status_code==200
+    registered=client.post('/api/auth/email/register',json={
+        'email':address,'code':email_sender['new.user@example.com']})
+    assert registered.status_code==201,registered.text
+    body=registered.json()
+    assert body['token_type']=='bearer' and body['user']['role']=='resident'
+    assert body['user']['email']=='new.user@example.com'
+    assert client.post('/api/auth/email/login',json={
+        'email':address,'code':email_sender['new.user@example.com']}).status_code==401
+
+    age_latest_code('new.user@example.com')
+    assert client.post('/api/auth/email/send-code',json={'email':address}).status_code==200
+    logged_in=client.post('/api/auth/email/login',json={
+        'email':address,'code':email_sender['new.user@example.com']})
+    assert logged_in.status_code==200,logged_in.text
     with SessionLocal() as db:
-        assert db.query(User).filter_by(email=address).count() == 1
+        assert db.query(User).filter_by(email='new.user@example.com').count()==1
 
 
-def test_email_validation_and_admin_directory(client, email_sender):
-    assert client.post('/api/auth/email/send-code', json={'email': 'invalid'}).status_code == 422
-    assert client.post('/api/auth/email/login', json={'email': 'invalid', 'code': '123'}).status_code == 422
-    address = 'listed@example.com'
-    client.post('/api/auth/email/send-code', json={'email': address})
-    login = client.post('/api/auth/email/login', json={'email': address, 'code': email_sender[address]})
-    assert login.status_code == 200
-    admin = client.post('/api/auth/login', json={'username': 'admin', 'password': 'Demo@123456'}).json()
-    accounts = client.get('/api/admin/accounts', headers={'Authorization': 'Bearer '+admin['access_token']})
-    listed = next(x for x in accounts.json() if x['email'] == address)
-    assert listed['role'] == 'resident'
+def test_unregistered_email_login_requires_email_registration(client, email_sender):
+    address='new-user@example.com'
+    assert client.post('/api/auth/email/send-code',json={'email':address}).status_code==200
+    code=email_sender[address]
+    unregistered=client.post('/api/auth/email/login',json={'email':address,'code':code})
+    assert unregistered.status_code==404
+    registered=client.post('/api/auth/email/register',json={'email':address,'code':code})
+    assert registered.status_code==201
+    assert client.post('/api/auth/email/register',json={'email':address,'code':code}).status_code==409
+
+
+def test_email_code_wrong_attempts_and_admin_directory(client, email_sender):
+    address='listed@example.com'
+    assert client.post('/api/auth/email/send-code',json={'email':address}).status_code==200
+    code=email_sender[address]
+    assert client.post('/api/auth/email/register',json={'email':address,'code':code}).status_code==201
+    age_latest_code(address)
+    assert client.post('/api/auth/email/send-code',json={'email':address}).status_code==200
+    code=email_sender[address]
+    wrong_code='000000' if code!='000000' else '999999'
+    for _ in range(4):
+        assert client.post('/api/auth/email/login',json={'email':address,'code':wrong_code}).status_code==401
+    assert client.post('/api/auth/email/login',json={'email':address,'code':code}).status_code==200
+    admin=client.post('/api/auth/login',json={'username':'admin','password':'Demo@123456'}).json()
+    accounts=client.get('/api/admin/accounts',headers={'Authorization':'Bearer '+admin['access_token']})
+    listed=next(item for item in accounts.json() if item['email']==address)
+    assert listed['role']=='resident'
+
+
+def test_email_validation(client, email_sender):
+    assert client.post('/api/auth/email/send-code',json={'email':'invalid'}).status_code==422
+    assert client.post('/api/auth/email/login',json={'email':'invalid','code':'123'}).status_code==422
