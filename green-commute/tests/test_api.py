@@ -42,8 +42,13 @@ def test_register_role_and_duplicate_username(client):
     body={'username':'freshperson','password':'very-secure-456'}
     r=client.post('/api/auth/register',json=body)
     assert r.status_code==201 and r.json()['user']['role']=='resident'
+    assert r.json()['token_type']=='bearer'
     assert client.post('/api/auth/register',json=body).status_code==409
     assert client.post('/api/auth/register',json={**body,'username':'a'}).status_code==422
+
+def test_login_input_contract_matches_registration(client):
+    assert client.post('/api/auth/login',json={'username':'ab','password':'valid-pass-123'}).status_code==422
+    assert client.post('/api/auth/login',json={'username':'resident','password':'x'*129}).status_code==422
 
 def test_calculation_boundaries():
     assert calculate('bus',10)==(10000,1100,11)

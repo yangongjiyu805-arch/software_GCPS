@@ -106,7 +106,8 @@ def account_name(user):
 
 def serial_user(user):
     return {'id':user.id,'username':user.username,'display_name':account_name(user),
-            'role':user.role,'balance':user.balance,'enabled':user.enabled}
+            'role':user.role,'balance':user.balance,'enabled':user.enabled,
+            'email':user.email}
 
 def serial_trip(t):
     calc=getattr(t,'calculation',None)

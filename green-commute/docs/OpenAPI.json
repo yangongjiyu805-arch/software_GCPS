@@ -94,6 +94,78 @@
         }
       }
     },
+    "/api/auth/email/send-code": {
+      "post": {
+        "summary": "Send Email Login Code",
+        "operationId": "send_email_login_code_api_auth_email_send_code_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCodeRequestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/email/login": {
+      "post": {
+        "summary": "Email Login",
+        "operationId": "email_login_api_auth_email_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailLoginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/me": {
       "get": {
         "summary": "Me",
@@ -565,7 +637,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Payload"
               }
@@ -1749,6 +1820,46 @@
         ],
         "title": "ChatTurn"
       },
+      "EmailCodeRequestIn": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "minLength": 6,
+            "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "EmailCodeRequestIn"
+      },
+      "EmailLoginIn": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "minLength": 6,
+            "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+            "title": "Email"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^\\d{6}$",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "code"
+        ],
+        "title": "EmailLoginIn"
+      },
       "EmissionRuleIn": {
         "properties": {
           "version": {
@@ -1841,10 +1952,15 @@
         "properties": {
           "username": {
             "type": "string",
+            "maxLength": 48,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9_]+$",
             "title": "Username"
           },
           "password": {
             "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
             "title": "Password"
           }
         },
@@ -2222,4 +2338,4 @@
       }
     }
   }
-}
+}\n

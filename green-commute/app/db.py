@@ -25,7 +25,8 @@ def ensure_runtime_schema():
     from .models import MerchantCategory, Product
 
     additions={
-        'users':{'enabled':'BOOLEAN NOT NULL DEFAULT 1',
+        'users':{'email':'VARCHAR(254)',
+                 'enabled':'BOOLEAN NOT NULL DEFAULT 1',
                  'session_version':'INTEGER NOT NULL DEFAULT 0'},
         'point_transactions':{'balance_after':'INTEGER NOT NULL DEFAULT 0'},
         'redemptions':{
@@ -49,6 +50,9 @@ def ensure_runtime_schema():
                 for column,definition in columns_to_add.items():
                     if column not in columns:
                         conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {definition}'))
+            user_indexes={index['name'] for index in inspect(conn).get_indexes('users')}
+            if 'uq_users_email' not in user_indexes:
+                conn.execute(text('CREATE UNIQUE INDEX uq_users_email ON users(email)'))
             conn.execute(text('UPDATE redemptions SET updated_at=created_at WHERE updated_at IS NULL'))
 
             products=Product.__table__

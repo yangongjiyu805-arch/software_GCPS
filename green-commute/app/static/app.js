@@ -57,7 +57,8 @@ function logout(){
   $('#sidebar').classList.remove('open');
   $('#login-form').reset();
   $('#register-form').reset();
-  setAuthTab(false);
+  $('#email-form').reset();
+  setAuthTab('login');
   $('#login-page').hidden=false;
   $('#logout').hidden=true;
   $('#top-name').textContent='访客';
@@ -340,7 +341,7 @@ function renderAdminMerchants(merchants){
 
 render.accounts=async function(){
   const panel=$('#accounts');
-  panel.innerHTML=head('ACCOUNT MANAGEMENT','账号管理','管理居民和商户的资料、密码与启用状态。')+`
+  panel.innerHTML=head('ACCOUNT MANAGEMENT','账号管理','管理居民和商户的资料、密码、邮箱与启用状态。')+`
     <section class="surface">
       <form id="account-filters" class="filter-form">
         <label class="field">角色<select name="role"><option value="">全部</option><option value="resident">居民</option><option value="merchant">商户</option></select></label>
@@ -348,7 +349,7 @@ render.accounts=async function(){
         <label class="field">启用状态<select name="enabled"><option value="">全部</option><option value="true">启用</option><option value="false">停用</option></select></label>
         <button type="submit" class="primary">查找</button><button type="button" class="outline" id="account-reset">重置</button>
       </form>
-      <div class="table-scroll"><table class="table"><thead><tr><th>用户名</th><th>角色</th><th>商户名称</th><th>状态</th><th>操作</th></tr></thead>
+      <div class="table-scroll"><table class="table"><thead><tr><th>用户名</th><th>角色</th><th>商户名称</th><th>邮箱</th><th>状态</th><th>操作</th></tr></thead>
       <tbody id="account-rows"></tbody></table></div>
     </section>`;
   const filters=$('#account-filters');
@@ -362,13 +363,13 @@ render.accounts=async function(){
       const accounts=await api('/admin/accounts?'+params);
       if(!rows.isConnected || request!==latestRequest)return;
       rows.innerHTML=accounts.map(account=>`<tr><td>${safe(account.username)}</td>
-        <td>${account.role==='merchant'?'商户':'居民'}</td><td>${account.role==='merchant'?safe(account.display_name):'—'}</td>
+        <td>${account.role==='merchant'?'商户':'居民'}</td><td>${account.role==='merchant'?safe(account.display_name):'—'}</td><td>${safe(account.email||'—')}</td>
         <td><span class="status ${account.enabled?'':'pending'}">${account.enabled?'启用':'停用'}</span></td>
         <td><div class="row-actions">
           <button class="outline" type="button" data-edit-account="${account.id}">编辑</button>
           <button class="outline" type="button" data-reset-account="${account.id}">重置密码</button>
           <button class="outline" type="button" data-toggle-account="${account.id}">${account.enabled?'停用':'恢复'}</button>
-        </div></td></tr>`).join('')||'<tr><td colspan="5" class="empty">暂无符合条件的账号</td></tr>';
+        </div></td></tr>`).join('')||'<tr><td colspan="6" class="empty">暂无符合条件的账号</td></tr>';
       for(const account of accounts){
         const endpoint=`/admin/accounts/${account.id}`;
         rows.querySelector(`[data-edit-account="${account.id}"]`).onclick=()=>openFormDialog({
@@ -510,13 +511,15 @@ render.merchant=async function(){
   });
 };
 
-function setAuthTab(register){
-  $('.auth-tabs').querySelectorAll('[data-auth]').forEach(tab=>tab.classList.toggle('active',(tab.dataset.auth==='register')===register));
-  $('#login-form').hidden=register;
-  $('#register-form').hidden=!register;
-  $('#auth-title').textContent=register?'创建居民账户':'登录青行';
-  $('#auth-eyebrow').textContent=register?'JOIN GREENGO':'WELCOME BACK';
-  $('#auth-subtitle').textContent=register?'注册后可记录出行并兑换积分':'请输入用户名和密码';
+function setAuthTab(mode){
+  $('.auth-tabs').querySelectorAll('[data-auth]').forEach(tab=>tab.classList.toggle('active',tab.dataset.auth===mode));
+  $('#login-form').hidden=mode!=='login';
+  $('#register-form').hidden=mode!=='register';
+  $('#email-form').hidden=mode!=='email';
+  const copy={login:['登录青行','WELCOME BACK','请输入用户名和密码'],register:['创建居民账户','JOIN GREENGO','注册后可记录出行并兑换积分'],email:['邮箱验证码登录','EMAIL LOGIN','输入邮箱，获取验证码后登录']}[mode];
+  $('#auth-title').textContent=copy[0];
+  $('#auth-eyebrow').textContent=copy[1];
+  $('#auth-subtitle').textContent=copy[2];
 }
 
 function startSession(result){
@@ -527,7 +530,7 @@ function startSession(result){
   showUser();
 }
 
-for(const [id,path] of [['login-form','/auth/login'],['register-form','/auth/register']]){
+for(const [id,path] of [['login-form','/auth/login'],['register-form','/auth/register'],['email-form','/auth/email/login']]){
   const form=document.getElementById(id);
   form.onsubmit=async event=>{
     event.preventDefault();
@@ -536,13 +539,33 @@ for(const [id,path] of [['login-form','/auth/login'],['register-form','/auth/reg
     try{
       const result=await api(path,'POST',Object.fromEntries(new FormData(form)));
       startSession(result);
-      toast(path==='/auth/register'?'注册成功':'欢迎回来，'+state.user.display_name);
+      toast(path==='/auth/register'?'注册成功':path==='/auth/email/login'?'邮箱登录成功':'欢迎回来，'+state.user.display_name);
       await openPage(rolePages[state.user.role][0]);
     }catch(error){toast(error.message)}
     finally{button.disabled=false}
   };
 }
-$('.auth-tabs').querySelectorAll('[data-auth]').forEach(tab=>tab.onclick=()=>setAuthTab(tab.dataset.auth==='register'));
+$('.auth-tabs').querySelectorAll('[data-auth]').forEach(tab=>tab.onclick=()=>setAuthTab(tab.dataset.auth));
+let codeTimer;
+$('#send-email-code').onclick=async()=>{
+  const form=$('#email-form');
+  const email=$('#email-address').value.trim();
+  if(!email){toast('请先填写邮箱');return}
+  const button=$('#send-email-code');
+  button.disabled=true;
+  try{
+    const result=await api('/auth/email/send-code','POST',{email});
+    toast('验证码已发送，请查收或查看服务端控制台');
+    let remaining=result.cooldown||60;
+    button.textContent=`${remaining}s 后重发`;
+    clearInterval(codeTimer);
+    codeTimer=setInterval(()=>{
+      remaining-=1;
+      if(remaining<=0){clearInterval(codeTimer);button.disabled=false;button.textContent='获取验证码'}
+      else button.textContent=`${remaining}s 后重发`;
+    },1000);
+  }catch(error){button.disabled=false;toast(error.message)}
+};
 $('#logout').onclick=logout;
 $('#mobile-menu').onclick=()=>$('#sidebar').classList.toggle('open');
 $('#today').textContent=new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'long',day:'numeric'}).format(new Date());

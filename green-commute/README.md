@@ -10,6 +10,8 @@
 
 居民可记录行程、筛选个人账本、兑换和退款。商户管理自己的品类、商品、库存和核销订单。管理员管理账号、客服工单及积分清算。平台还支持可选的大模型问答与独立事件处理进程。
 
+登录支持两种方式：原有用户名/密码注册登录，以及可选的邮箱验证码登录。邮箱验证码登录首次验证某个邮箱时会自动创建居民账号，后续使用同一邮箱继续登录，原有密码账号和管理员账号不受影响。默认 `EMAIL_DELIVERY=console`，验证码只打印在服务端控制台，适合本地课堂演示；需要真实邮件时设置 `EMAIL_DELIVERY=smtp`，并填写 `.env.example` 中的 SMTP 配置。验证码有效期 5 分钟、单次使用，发送间隔 60 秒。
+
 **业务范围**：平台依据上报里程和当时生效的排放规则估算减排量及积分。商户维护商品、库存并处理兑换，管理员记录积分结算。网页使用原生 HTML/CSS/JS，后端支持 SQLite 和 MySQL 8。
 
 ## 1. 启动与首次管理员
@@ -114,6 +116,8 @@ docker compose up -d
 | 接口 | 访问与字段 |
 |---|---|
 | `POST /api/auth/register` | `username`、`password`。服务端固定居民角色，显示名使用用户名。 |
+| `POST /api/auth/email/send-code` | 传 `email` 获取一次性验证码；默认打印在服务端控制台，也可配置 SMTP。 |
+| `POST /api/auth/email/login` | 传 `email`、6 位 `code` 登录；首次验证邮箱自动创建居民账号。 |
 | `GET /api/trips/{id}`、`GET /api/redemptions/{id}` | 仅返回当前居民自己的记录。退款也核对订单归属。 |
 | `POST /api/trips` | `client_trip_id` 由网页自动生成并在重试时复用。接口仍接受该字段，旧编号保留。 |
 | `GET /api/wallet` | 可组合 `start_date`、`end_date`、`timezone`（IANA）和 `direction`（`all`、`income`、`expense`）。按本地日期筛选，结束日包含当天，正向退款属于收入。筛选后使用 `limit` 和 `before_id` 翻页，汇总按全量账本计算。 |

@@ -14,6 +14,7 @@ textarea{font:inherit;width:100%;padding:12px 13px;resize:vertical;background:#f
 @media(max-width:1050px){.support-layout,.ai-layout{grid-template-columns:1fr}.support-messages{max-height:330px}.ticket-scroll{max-height:220px}}
 
 .auth-tabs{display:flex;gap:6px;margin:22px 0 8px;border-bottom:1px solid var(--line)}.auth-tab{border:0;background:transparent;color:#84998a;padding:10px 14px;border-bottom:2px solid transparent}.auth-tab.active{color:#207950;border-bottom-color:#207950;font-weight:800}
+.code-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
 
 /* GreenGo visual system: calm editorial surfaces, deep forest navigation and bright eco actions. */
 :root{--dark:#103d2c;--forest:#0b3b2b;--green:#16845b;--green-strong:#0d6948;--mint:#dff4e7;--lime:#d9f58f;--cream:#fbfdf9;--line:#dfece3;--muted:#71877b;--bg:#f2f8f3;--white:#fff;--shadow:0 22px 60px rgba(13,72,47,.09);--shadow-soft:0 10px 30px rgba(13,72,47,.07)}

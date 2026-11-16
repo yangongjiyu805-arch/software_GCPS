@@ -10,6 +10,7 @@ class User(Base):
     __tablename__='users'
     id: Mapped[int]=mapped_column(Integer,primary_key=True)
     username: Mapped[str]=mapped_column(String(48),unique=True,index=True)
+    email: Mapped[str|None]=mapped_column(String(254),nullable=True,index=True)
     password_hash: Mapped[str]=mapped_column(String(200))
     display_name: Mapped[str]=mapped_column(String(80))
     role: Mapped[str]=mapped_column(String(15),default='resident')
@@ -17,6 +18,17 @@ class User(Base):
     enabled: Mapped[bool]=mapped_column(Boolean,default=True,server_default=text('1'))
     session_version: Mapped[int]=mapped_column(Integer,default=0,server_default=text('0'))
     created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow)
+
+class EmailCode(Base):
+    """One-time email authentication codes; only the HMAC digest is stored."""
+    __tablename__='email_codes'
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    email: Mapped[str]=mapped_column(String(254),index=True)
+    code_hash: Mapped[str]=mapped_column(String(64))
+    attempts: Mapped[int]=mapped_column(Integer,default=0)
+    expires_at: Mapped[datetime]=mapped_column(DateTime,index=True)
+    used_at: Mapped[datetime|None]=mapped_column(DateTime,nullable=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime,default=utcnow,index=True)
 
 class Trip(Base):
     __tablename__='trips'

@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import os
+import re
+import secrets
+import hmac
 import jwt
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -16,10 +19,12 @@ from sqlalchemy import case, select, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .db import get_db,SessionLocal,ensure_runtime_schema
-from .models import (User, Trip, Product, MerchantCategory, InventoryMovement, PointTransaction, Redemption, Settlement,
+from .models import (User, EmailCode, Trip, Product, MerchantCategory, InventoryMovement, PointTransaction, Redemption, Settlement,
                      OutboxEvent, EmissionRule, SupportTicket, SupportMessage, utcnow)
 from .assistant_service import configuration, query_model
 from .security import create_token, decode_token, hash_password,verify_password
+from .email_service import (CODE_COOLDOWN_SECONDS, CODE_MAX_ATTEMPTS, CODE_TTL_SECONDS,
+                            code_digest, generate_code, normalize_email, send_email_code)
 from .services import (BusinessError, submit_trip,redeem,refund_redemption,process_pending,stats,serial_user,
                        serial_inventory_movement,adjust_inventory,backfill_inventory_opening,
                        serial_trip,serial_trip_detail,serial_product,serial_redemption,serial_settlement,
@@ -29,16 +34,25 @@ from .services import (BusinessError, submit_trip,redeem,refund_redemption,proce
 
 Username=Annotated[str,Field(min_length=3,max_length=48,pattern=r'^[a-zA-Z0-9_]+$')]
 Password=Annotated[str,Field(min_length=8,max_length=128)]
+LoginPassword=Annotated[str,Field(min_length=1,max_length=128)]
 StoreName=Annotated[str,StringConstraints(strip_whitespace=True,min_length=1,max_length=80)]
 CategoryName=Annotated[str,StringConstraints(strip_whitespace=True,min_length=1,max_length=40)]
 ManagedRole=Literal['resident','merchant']
+EmailAddress=Annotated[str,StringConstraints(strip_whitespace=True,min_length=6,max_length=254,
+                                             pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')]
+EmailCodeValue=Annotated[str,Field(min_length=6,max_length=6,pattern=r'^\d{6}$')]
 
 class LoginIn(BaseModel):
-    username: str
-    password: str
+    username: Username
+    password: LoginPassword
 class RegisterIn(BaseModel):
     username: Username
     password: Password
+class EmailCodeRequestIn(BaseModel):
+    email: EmailAddress
+class EmailLoginIn(BaseModel):
+    email: EmailAddress
+    code: EmailCodeValue
 class MerchantCreateIn(BaseModel):
     username: Username
     display_name: StoreName
@@ -198,7 +212,52 @@ def register(payload:RegisterIn,db:Session=Depends(get_db)):
     db.add(u)
     commit_unique(db,'用户名已存在')
     db.refresh(u)
-    return {'access_token':create_token(u.id,u.session_version),'user':serial_user(u)}
+    return {'access_token':create_token(u.id,u.session_version),'token_type':'bearer','user':serial_user(u)}
+
+@app.post('/api/auth/email/send-code')
+def send_email_login_code(payload:EmailCodeRequestIn,db:Session=Depends(get_db)):
+    email=normalize_email(payload.email)
+    latest=db.scalar(select(EmailCode).where(EmailCode.email==email)
+                     .order_by(EmailCode.created_at.desc(),EmailCode.id.desc()))
+    now=utcnow()
+    if latest and (now-latest.created_at).total_seconds()<CODE_COOLDOWN_SECONDS:
+        raise HTTPException(status_code=429,detail='验证码发送过于频繁，请稍后再试')
+    code=generate_code()
+    try:
+        send_email_code(email,code)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503,detail=str(exc)) from exc
+    db.add(EmailCode(email=email,code_hash=code_digest(email,code),
+                     expires_at=now+timedelta(seconds=CODE_TTL_SECONDS)))
+    db.commit()
+    return {'ok':True,'expires_in':CODE_TTL_SECONDS,'cooldown':CODE_COOLDOWN_SECONDS}
+
+@app.post('/api/auth/email/login')
+def email_login(payload:EmailLoginIn,db:Session=Depends(get_db)):
+    email=normalize_email(payload.email)
+    code_row=db.scalar(select(EmailCode).where(EmailCode.email==email,EmailCode.used_at.is_(None))
+                       .order_by(EmailCode.created_at.desc(),EmailCode.id.desc()))
+    now=utcnow()
+    if code_row is None or code_row.expires_at<=now or code_row.attempts>=CODE_MAX_ATTEMPTS:
+        raise HTTPException(status_code=401,detail='验证码无效或已过期')
+    if not hmac.compare_digest(code_row.code_hash,code_digest(email,payload.code)):
+        code_row.attempts+=1
+        db.commit()
+        raise HTTPException(status_code=401,detail='验证码错误')
+    code_row.used_at=now
+    u=db.scalar(select(User).where(User.email==email))
+    if u is None:
+        local=re.sub(r'[^a-zA-Z0-9_]+','_',email.split('@',1)[0]).strip('_')[:24] or 'user'
+        username=f'email_{local}_{secrets.token_hex(4)}'[:48]
+        u=User(username=username,email=email,display_name=local[:80] or '居民',
+               password_hash=hash_password(secrets.token_urlsafe(32)),role='resident',balance=0)
+        db.add(u)
+    elif not u.enabled:
+        db.commit()
+        raise HTTPException(status_code=403,detail='账号已停用，请联系管理员')
+    db.commit()
+    db.refresh(u)
+    return {'access_token':create_token(u.id,u.session_version),'token_type':'bearer','user':serial_user(u)}
 
 @app.get('/api/me')
 def me(u:User=Depends(current_user),db:Session=Depends(get_db)):
