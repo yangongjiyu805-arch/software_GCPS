@@ -204,6 +204,22 @@ def test_event_retry_is_idempotent(client):
         assert db.query(PointTransaction).filter_by(kind='TRIP').count()==1
     assert api(client,'get','/api/wallet',h).json()['balance']==11
 
+def test_admin_can_inspect_completed_and_failed_events(client):
+    admin=login(client,'admin')
+    resident=login(client)
+    trip(client,resident)
+    done=api(client,'get','/api/admin/events',admin, None)
+    assert done.status_code==200 and any(row['state']=='DONE' for row in done.json())
+    assert api(client,'get','/api/admin/events',resident).status_code==403
+    with SessionLocal() as db:
+        db.add(OutboxEvent(kind='UnknownEvent',ref_id=999))
+        db.commit()
+    assert api(client,'post','/api/admin/events/process',admin).json()['processed']==0
+    stats=api(client,'get','/api/admin/stats',admin).json()
+    assert stats['failed_events']>=1
+    failed=client.get('/api/admin/events',headers=admin,params={'state':'failed'}).json()
+    assert failed and failed[0]['attempts']>=1 and 'Unknown event kind' in failed[0]['error']
+
 def test_full_merchant_fulfillment_settlement(client):
     r=login(client);m=login(client,'merchant');a=login(client,'admin')
     trip(client,r,distance='50')

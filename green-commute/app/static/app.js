@@ -108,7 +108,46 @@ const modeZh={bus:'公交车',metro:'地铁',bike:'骑行',walk:'步行'};
 const render={
  async dashboard(){await refreshUser();const [trips,data]=await Promise.all([api('/trips'),api('/wallet')]);const total=trips.reduce((s,t)=>s+t.saved_kg,0);const dist=trips.reduce((s,t)=>s+t.distance_km,0);const days=[];for(let i=6;i>=0;i--){let d=new Date;d.setDate(d.getDate()-i);days.push({key:d.toISOString().slice(0,10),label:['日','一','二','三','四','五','六'][d.getDay()],val:0})}for(const t of trips){let d=days.find(x=>x.key===t.created_at.slice(0,10));if(d)d.val+=t.points}const max=Math.max(...days.map(d=>d.val),1);$('#dashboard').innerHTML=head('YOUR IMPACT','早上好，'+safe(state.user.display_name)+' 👋','今天也为低碳城市贡献一份力量吧。','<span class="pill">✳ 绿色行动者</span>')+`<div class="hero"><div><div class="eyebrow" style="color:#b6dc9b">A GREENER CITY STARTS WITH YOU</div><h2>绿色出行，不止于抵达。<br>让环保成为日常习惯。</h2><p>记录公交、地铁、骑行或步行，累计您的减碳成果。</p><button class="button-light" id="hero-go">＋ 记录一段绿色出行 ↗</button></div><div class="hero-right"><div class="big-leaf">❧</div></div></div><div class="cards">${stat('当前可用积分',fmt(data.balance),'每次绿色出行均可累积','✳')}${stat('近期行程减碳',total.toFixed(2)+' <small style="font-size:13px">kg</small>','CO₂e 估算值','☘')}${stat('绿色行程',fmt(trips.length),'最近最多 100 条','↗')}${stat('近期绿色里程',dist.toFixed(1)+' <small style="font-size:13px">km</small>','已完成绿色出行里程','◇')}</div><div class="split"><div class="surface"><div class="surface-title"><h3>近 7 天积分趋势</h3><button class="link" id="chart-detail">查看记录 ↗</button></div><p class="sub">日常低碳行动，积少成多</p><div class="chart-wrap">${days.map(d=>`<div class="chart-col"><div class="bar" title="${d.val} 积分" style="height:${Math.max(3,d.val/max*115)}px"></div><div class="chart-label">周${d.label}</div></div>`).join('')}</div></div><div class="surface"><div class="surface-title"><h3>低碳小贴士</h3><span class="tag">ECO TIP</span></div><div class="tips"><strong>公交与骑行，让每公里更有意义。</strong><p>减排量根据行程记录和当时生效的排放规则估算。积分和减排量可在行程记录中核对。</p></div><p class="hint" style="margin-top:20px">已累计获得积分 <strong>${fmt(data.total_earned)}</strong>，累计支出积分 <strong>${fmt(data.total_spent)}</strong>。</p></div></div>`;$('#hero-go').onclick=()=>openPage('journey');$('#chart-detail').onclick=()=>openPage('wallet')},
  async orders(){const rows=await api('/redemptions');$('#orders').innerHTML=head('REDEMPTION HISTORY','我的兑换','查询已兑换的商品与当前商户履约状态。')+`<div class="surface"><h3>兑换订单</h3><p class="sub">兑换、履约和退款都会同步记录积分账本</p><div class="table-scroll"><table class="table"><thead><tr><th>订单编号</th><th>商品</th><th>兑换时间</th><th>消耗积分</th><th>状态</th></tr></thead><tbody>${rows.map(r=>`<tr><td>#${r.id}</td><td>${safe(r.product_name)}</td><td>${time(r.created_at)}</td><td class="minus">-${r.points}</td><td><span class="status ${r.status==='TO_FULFILL'?'pending':''}">${r.status==='FULFILLED'?'已核销':r.status==='TO_FULFILL'?'待商户核销':r.status==='REFUNDED'?'已退款':'处理中'}</span>${r.status==='TO_FULFILL'?` <button class="small-action" data-refund="${r.id}">申请退款</button>`:''}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">暂无兑换订单</td></tr>'}</tbody></table></div></div>`;$('#orders').querySelectorAll('[data-refund]').forEach(b=>b.onclick=async()=>{if(!confirm('确认退回这笔兑换并返还积分吗？'))return;b.disabled=true;try{const x=await api(`/redemptions/${b.dataset.refund}/refund`,'POST');toast(`退款成功，当前余额 ${x.balance} 积分`);await openPage('orders')}catch(e){toast(e.message);b.disabled=false}})},
-async admin(){const [st,settlements,merchants]=await Promise.all([api('/admin/stats'),api('/admin/settlements'),api('/admin/merchants')]);$('#admin').innerHTML=head('OPERATIONS CENTER','运营管理中心','查看全站低碳成果，追踪事件处理与商户积分清算。',`<button class="outline" id="replay">↻ 重试待处理事件 (${st.pending_events})</button>`)+`<div class="cards">${stat('注册居民',fmt(st.users),'城市低碳参与者','◉')}${stat('已完成行程',fmt(st.trips),'已发放积分的行程','↗')}${stat('减碳总量',fmt(st.saved_kg)+' kg','平台累计 CO₂e','☘')}${stat('平台发放积分',fmt(st.issued_points),'历史发放总量','✳')}${stat('库存预警',fmt(st.low_stock_products),'在售商品库存不高于5件','!')}${stat('待结算',fmt(st.pending_settlements),'商户待结算订单','▣')}</div><div class="surface"><div class="surface-title"><h3>商户结算管理</h3><span class="pill">兑换订单 ${st.redemptions} 笔</span></div><p class="sub">商户完成核销后，可标记该订单已结算积分</p><div class="table-scroll"><table class="table"><thead><tr><th>订单</th><th>商户用户ID</th><th>积分额</th><th>清算状态</th><th>操作</th></tr></thead><tbody>${settlements.map(s=>`<tr><td>#${s.redemption_id}</td><td>${s.merchant_id}</td><td>${s.points}</td><td><span class="status ${s.status==='PENDING'?'pending':''}">${s.status==='SETTLED'?'已清算':s.status==='CANCELLED'?'已取消':'待清算'}</span></td><td>${s.status==='PENDING'?`<button class="small-action" data-settle="${s.redemption_id}">完成清算</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">暂无清算记录</td></tr>'}</tbody></table></div></div>`;$('#replay').onclick=async()=>{try{const d=await api('/admin/events/process','POST');toast('已处理 '+d.processed+' 个事件');openPage('admin')}catch(e){toast(e.message)}};$('#admin').querySelectorAll('[data-settle]').forEach(b=>b.onclick=async()=>{try{await api(`/admin/settlements/${b.dataset.settle}/settle`,'POST');toast('清算标记成功');openPage('admin')}catch(e){toast(e.message)}});renderAdminMerchants(merchants)}
+async admin(){
+  const [st,settlements,merchants,events]=await Promise.all([
+    api('/admin/stats'),api('/admin/settlements'),api('/admin/merchants'),api('/admin/events')
+  ]);
+  const settlementCount=status=>settlements.filter(row=>row.status===status).length;
+  const eventState=event=>event.state==='PENDING'?(event.attempts?'FAILED':'PENDING'):event.state;
+  const eventCount=state=>events.filter(event=>eventState(event)===state).length;
+  $('#admin').innerHTML=head('OPERATIONS CENTER','运营管理中心','查看全站低碳成果，追踪事件处理与商户积分清算。',`<button class="outline" id="replay">↻ 重试待处理事件 (${st.pending_events})</button>`)+
+    `<div class="cards">${stat('注册居民',fmt(st.users),'城市低碳参与者','◉')}${stat('已完成行程',fmt(st.trips),'已发放积分的行程','↗')}${stat('减碳总量',fmt(st.saved_kg)+' kg','平台累计 CO₂e','☘')}${stat('平台发放积分',fmt(st.issued_points),'历史发放总量','✳')}${stat('已履约订单',fmt(st.fulfilled_orders),'商户已完成核销','✓')}${stat('已退款订单',fmt(st.refunded_orders),'用户已完成退款','↶')}${stat('库存预警',fmt(st.low_stock_products),'在售商品库存不高于5件','!')}${stat('待结算',fmt(st.pending_settlements),'商户待结算订单','▣')}${stat('失败事件',fmt(st.failed_events),'需要管理员关注','⚠')}</div>
+    <section class="surface"><div class="surface-title"><h3>商户结算管理</h3><span class="pill">兑换订单 ${st.redemptions} 笔</span></div><p class="sub">商户完成核销后，可标记该订单已结算积分</p>
+      <div class="filters"><button class="filter active" type="button" data-settlement-filter="ALL">全部（${settlements.length}）</button><button class="filter" type="button" data-settlement-filter="PENDING">待结算（${settlementCount('PENDING')}）</button><button class="filter" type="button" data-settlement-filter="SETTLED">已结算（${settlementCount('SETTLED')}）</button><button class="filter" type="button" data-settlement-filter="CANCELLED">已取消（${settlementCount('CANCELLED')}）</button></div>
+      <div class="table-scroll"><table class="table"><thead><tr><th>订单</th><th>商户用户ID</th><th>积分额</th><th>清算状态</th><th>操作</th></tr></thead><tbody>${settlements.map(s=>`<tr data-settlement-row data-settlement-status="${s.status}"><td>#${s.redemption_id}</td><td>${s.merchant_id}</td><td>${s.points}</td><td><span class="status ${s.status==='PENDING'?'pending':''}">${s.status==='SETTLED'?'已清算':s.status==='CANCELLED'?'已取消':'待清算'}</span></td><td>${s.status==='PENDING'?`<button class="small-action" data-settle="${s.redemption_id}">完成清算</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">暂无清算记录</td></tr>'}</tbody></table></div>
+    </section>
+    <section class="surface section-gap"><div class="surface-title"><h3>事件处理记录</h3><span class="account-note">最近 ${events.length} 条</span></div><p class="sub">失败事件会保留错误信息，便于重试前定位原因。</p>
+      <div class="filters"><button class="filter active" type="button" data-event-filter="ALL">全部（${events.length}）</button><button class="filter" type="button" data-event-filter="PENDING">待处理（${eventCount('PENDING')}）</button><button class="filter" type="button" data-event-filter="FAILED">失败（${eventCount('FAILED')}）</button><button class="filter" type="button" data-event-filter="DONE">已完成（${eventCount('DONE')}）</button></div>
+      <div class="table-scroll"><table class="table"><thead><tr><th>事件</th><th>引用编号</th><th>状态</th><th>尝试次数</th><th>错误</th><th>创建时间</th></tr></thead><tbody>${events.map(event=>`<tr data-event-row data-event-state="${eventState(event)}"><td>${safe(event.kind)}</td><td>#${event.reference_id}</td><td><span class="status ${eventState(event)!=='DONE'?'pending':''}">${eventState(event)==='DONE'?'已完成':eventState(event)==='FAILED'?'失败':'待处理'}</span></td><td>${event.attempts}</td><td>${safe(event.error||'—')}</td><td>${time(event.created_at)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">暂无事件记录</td></tr>'}</tbody></table></div>
+    </section>`;
+  $('#admin').querySelectorAll('[data-settlement-filter]').forEach(button=>button.onclick=()=>{
+    const filter=button.dataset.settlementFilter;
+    $('#admin').querySelectorAll('[data-settlement-filter]').forEach(item=>item.classList.toggle('active',item===button));
+    $('#admin').querySelectorAll('[data-settlement-row]').forEach(row=>row.hidden=filter!=='ALL'&&row.dataset.settlementStatus!==filter);
+  });
+  $('#admin').querySelectorAll('[data-event-filter]').forEach(button=>button.onclick=()=>{
+    const filter=button.dataset.eventFilter;
+    $('#admin').querySelectorAll('[data-event-filter]').forEach(item=>item.classList.toggle('active',item===button));
+    $('#admin').querySelectorAll('[data-event-row]').forEach(row=>row.hidden=filter!=='ALL'&&row.dataset.eventState!==filter);
+  });
+  $('#replay').onclick=async()=>{
+    const button=$('#replay');button.disabled=true;button.textContent='处理中…';
+    try{const result=await api('/admin/events/process','POST');toast(`已处理 ${result.processed} 个事件`);await openPage('admin')}
+    catch(error){toast(error.message);button.disabled=false;button.textContent=`↻ 重试待处理事件 (${st.pending_events})`}
+  };
+  $('#admin').querySelectorAll('[data-settle]').forEach(button=>button.onclick=async()=>{
+    button.disabled=true;button.textContent='处理中…';
+    try{await api(`/admin/settlements/${button.dataset.settle}/settle`,'POST');toast('清算标记成功');await openPage('admin')}
+    catch(error){toast(error.message);button.disabled=false;button.textContent='完成清算'}
+  });
+  renderAdminMerchants(merchants);
+  await renderAdminRules();
+}
 };
 function tripTable(rows){return `<div class="table-scroll"><table class="table"><thead><tr><th>行程编号</th><th>行程时间</th><th>方式</th><th>距离</th><th>减碳量</th><th>奖励积分</th><th>来源/规则</th><th>状态</th></tr></thead><tbody>${rows.map(t=>`<tr><td>${safe(t.client_trip_id)}</td><td>${time(t.created_at)}</td><td>${modeZh[t.mode]}</td><td>${t.distance_km.toFixed(2)} km</td><td>${t.saved_kg.toFixed(3)} kg</td><td class="plus">+${t.points}</td><td>${t.source==='legacy'?'历史记录':t.source==='simulated'?'估算记录':t.source==='imported'?'导入':t.source==='partner'?'合作方':'手动'} · ${safe(t.rule_version||'-')}</td><td><span class="status ${t.status==='PENDING'?'pending':''}">${t.status==='AWARDED'?'已发放':'待处理'}</span></td></tr>`).join('')||'<tr><td colspan="8" class="empty">暂时还没有行程，开始记录第一段低碳出行吧！</td></tr>'}</tbody></table></div>`}
 
@@ -337,6 +376,35 @@ function renderAdminMerchants(merchants){
       if(state.page==='admin')await render.admin();
     }
   });
+}
+
+async function renderAdminRules(){
+  $('#admin-rules-panel')?.remove();
+  const panel=document.createElement('section');
+  panel.id='admin-rules-panel';
+  panel.className='surface section-gap';
+  panel.innerHTML=`<div class="surface-title"><h3>排放规则管理</h3><button id="new-rule" type="button" class="primary">发布新规则</button></div>
+    <p class="sub">新规则只影响后续行程，历史行程保留当时的规则快照。</p><div id="admin-rules-body"><p class="empty">正在加载规则…</p></div>`;
+  $('#admin').append(panel);
+  panel.querySelector('#new-rule').onclick=()=>openFormDialog({
+    title:'发布排放规则',submitLabel:'发布规则',
+    fields:`<label class="field">规则版本<input name="version" required maxlength="32" pattern="[a-zA-Z0-9._-]+" placeholder="例如 2026.2"></label>
+      <label class="field">规则名称<input name="name" required minlength="2" maxlength="120" placeholder="例如 GreenGo 春季规则"></label>
+      <label class="field">基准排放（g/km）<input name="baseline_g_per_km" type="number" min="1" max="1000" value="180" required></label>
+      <label class="field">每公斤积分<input name="points_per_kg" type="number" min="1" max="100" value="10" required></label>
+      <label class="field">公交（g/km）<input name="bus" type="number" min="0" max="1000" value="70" required></label>
+      <label class="field">地铁（g/km）<input name="metro" type="number" min="0" max="1000" value="40" required></label>
+      <label class="field">骑行（g/km）<input name="bike" type="number" min="0" max="1000" value="0" required></label>
+      <label class="field">步行（g/km）<input name="walk" type="number" min="0" max="1000" value="0" required></label>`,
+    save:fields=>api('/admin/rules','POST',{version:fields.get('version'),name:fields.get('name'),
+      baseline_g_per_km:Number(fields.get('baseline_g_per_km')),points_per_kg:Number(fields.get('points_per_kg')),
+      mode_g_per_km:{bus:Number(fields.get('bus')),metro:Number(fields.get('metro')),bike:Number(fields.get('bike')),walk:Number(fields.get('walk'))}}),
+    complete:async()=>{toast('排放规则已发布');await renderAdminRules()}
+  });
+  try{
+    const rules=await api('/admin/rules');
+    $('#admin-rules-body').innerHTML=rules.map(rule=>`<div class="admin-row"><div><strong>${safe(rule.version)} · ${safe(rule.name)}</strong><small>基准 ${rule.baseline_g_per_km} g/km · 每公斤 ${rule.points_per_kg} 积分 · 公交 ${rule.mode_g_per_km.bus} / 地铁 ${rule.mode_g_per_km.metro} / 骑行 ${rule.mode_g_per_km.bike} / 步行 ${rule.mode_g_per_km.walk} g/km</small></div><span class="status ${rule.effective_to?'':'pending'}">${rule.effective_to?'已结束':'当前生效'}</span></div>`).join('')||'<p class="empty">暂无排放规则</p>';
+  }catch(error){$('#admin-rules-body').innerHTML=`<p class="empty">规则加载失败：${safe(error.message)}</p>`}
 }
 
 render.accounts=async function(){

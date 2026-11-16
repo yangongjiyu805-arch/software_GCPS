@@ -127,6 +127,10 @@ docker compose up -d
 | `GET/POST /api/merchant/categories` | 仅当前商户。创建传 `name`，去除首尾空白，同一商户重名返回 `409`。 |
 | `/api/merchant/products`、`/api/merchant/orders` | 商品编辑、库存和订单核销均校验商户归属。商品接口的 `category` 继续接收品类名称，新增名称保存到本店品类。 |
 | `POST /api/admin/merchants` | 仅管理员。传 `username`、`display_name`（店铺名称）和 `password`。 |
+| `GET/POST /api/admin/rules` | 仅管理员。查看或发布版本化排放规则；新规则只影响后续行程。 |
+| `GET /api/admin/stats` | 仅管理员。查看运营、履约、退款、库存预警、待结算和失败事件统计。 |
+| `GET /api/admin/settlements`、`POST /api/admin/settlements/{id}/settle` | 仅管理员。查看清算记录，并在订单已履约后完成清算。 |
+| `GET /api/admin/events`、`POST /api/admin/events/process` | 仅管理员。查看事件状态、尝试次数和错误，并重试待处理事件。 |
 | `GET /api/admin/accounts` | 仅管理员。支持 `role`、`username`、`enabled` 筛选居民和商户。 |
 | `PATCH /api/admin/accounts/{id}` | 仅管理员。更新 `username`、商户的 `display_name` 或 `enabled`，保留历史。 |
 | `POST /api/admin/accounts/{id}/reset-password` | 仅管理员。传 `password`，重置后该账号已签发会话失效。 |

@@ -40,6 +40,7 @@ CategoryName=Annotated[str,StringConstraints(strip_whitespace=True,min_length=1,
 ProductName=Annotated[str,StringConstraints(strip_whitespace=True,min_length=2,max_length=90)]
 InventoryNote=Annotated[str,StringConstraints(strip_whitespace=True,min_length=2,max_length=200)]
 ManagedRole=Literal['resident','merchant']
+EventState=Literal['all','pending','failed','done']
 EmailAddress=Annotated[str,StringConstraints(strip_whitespace=True,min_length=6,max_length=254,
                                              pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')]
 EmailCodeValue=Annotated[str,Field(min_length=6,max_length=6,pattern=r'^\d{6}$')]
@@ -562,8 +563,25 @@ def fulfill(redemption_id:int,u:User=Depends(require_role('merchant')),db:Sessio
 def platform_stats(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
     summary=stats(db)
     summary.update(users=db.scalar(select(func.count()).select_from(User).where(User.role=='resident')) or 0,
-                   pending_events=db.scalar(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.state=='PENDING')) or 0)
+                   pending_events=db.scalar(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.state=='PENDING')) or 0,
+                   failed_events=db.scalar(select(func.count()).select_from(OutboxEvent).where(
+                       OutboxEvent.state=='PENDING',OutboxEvent.attempts>0)) or 0)
     return summary
+
+@app.get('/api/admin/events')
+def admin_events(state:EventState='all',limit:int=Query(default=100,ge=1,le=200),
+                 u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
+    q=select(OutboxEvent)
+    if state=='pending':
+        q=q.where(OutboxEvent.state=='PENDING',OutboxEvent.attempts==0)
+    elif state=='failed':
+        q=q.where(OutboxEvent.state=='PENDING',OutboxEvent.attempts>0)
+    elif state=='done':
+        q=q.where(OutboxEvent.state=='DONE')
+    rows=db.scalars(q.order_by(OutboxEvent.id.desc()).limit(limit)).all()
+    return [{'id':row.id,'kind':row.kind,'reference_id':row.ref_id,'state':row.state,
+             'attempts':row.attempts,'error':row.error,
+             'created_at':row.created_at.isoformat()+'Z'} for row in rows]
 
 @app.get('/api/admin/settlements')
 def settlements(u:User=Depends(require_role('admin')),db:Session=Depends(get_db)):
