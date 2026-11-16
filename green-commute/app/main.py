@@ -37,6 +37,8 @@ Password=Annotated[str,Field(min_length=8,max_length=128)]
 LoginPassword=Annotated[str,Field(min_length=1,max_length=128)]
 StoreName=Annotated[str,StringConstraints(strip_whitespace=True,min_length=1,max_length=80)]
 CategoryName=Annotated[str,StringConstraints(strip_whitespace=True,min_length=1,max_length=40)]
+ProductName=Annotated[str,StringConstraints(strip_whitespace=True,min_length=2,max_length=90)]
+InventoryNote=Annotated[str,StringConstraints(strip_whitespace=True,min_length=2,max_length=200)]
 ManagedRole=Literal['resident','merchant']
 EmailAddress=Annotated[str,StringConstraints(strip_whitespace=True,min_length=6,max_length=254,
                                              pattern=r'^[^\s@]+@[^\s@]+\.[^\s@]+$')]
@@ -78,14 +80,14 @@ class EmissionRuleIn(BaseModel):
     points_per_kg: int=Field(ge=1,le=100)
     mode_g_per_km: dict[str,int]
 class ProductIn(BaseModel):
-    name: str=Field(min_length=2,max_length=90)
+    name: ProductName
     description: str=Field(default='',max_length=300)
     category: CategoryName='生活好物'
     icon: str=Field(default='gift',max_length=16)
     cost: int=Field(ge=1,le=100000)
     stock: int=Field(ge=0,le=100000)
 class ProductUpdateIn(BaseModel):
-    name: str|None=Field(default=None,min_length=2,max_length=90)
+    name: ProductName|None=None
     description: str|None=Field(default=None,max_length=300)
     category: CategoryName|None=None
     icon: str|None=Field(default=None,max_length=16)
@@ -94,7 +96,7 @@ class ProductUpdateIn(BaseModel):
 class InventoryAdjustIn(BaseModel):
     operation_id: str=Field(min_length=6,max_length=72,pattern=r'^[a-zA-Z0-9_-]+$')
     quantity: int=Field(ge=-100000,le=100000)
-    note: str=Field(min_length=2,max_length=200)
+    note: InventoryNote
 class FulfillIn(BaseModel):
     status: str=Field(pattern='^(FULFILLED)$')
 

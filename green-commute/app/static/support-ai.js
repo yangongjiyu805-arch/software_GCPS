@@ -9,7 +9,10 @@ render.support=async function(){
   const tickets=await api('/support/tickets');
   const isAgent=state.user.role==='admin';
   if(!tickets.some(x=>x.id===state.selectedSupportId))state.selectedSupportId=tickets.length?tickets[0].id:null;
-  const list=tickets.map(x=>`<button type="button" class="ticket-item ${state.selectedSupportId===x.id?'selected':''}" data-ticket-id="${x.id}">
+  const pending=tickets.filter(x=>x.status==='OPEN').length;
+  const inProgress=tickets.filter(x=>x.status==='IN_PROGRESS').length;
+  const resolved=tickets.filter(x=>x.status==='RESOLVED').length;
+  const list=tickets.map(x=>`<button type="button" class="ticket-item ${state.selectedSupportId===x.id?'selected':''}" data-ticket-id="${x.id}" data-ticket-status="${x.status}">
     <span class="ticket-line"><strong>#${x.id} ${safe(x.subject)}</strong><span class="status ${x.status==='RESOLVED'?'':'pending'}">${ticketLabels[x.status]||'未知'}</span></span>
     <span class="ticket-meta">${safe(x.category)}${isAgent?' · '+safe(x.customer_name):''} · ${time(x.updated_at)}</span></button>`).join('');
   $('#support').innerHTML=head('CUSTOMER SUPPORT',isAgent?'客服工单工作台':'客服中心',isAgent?'查看用户咨询、回复工单、更新处理状态。':'有积分、行程或兑换问题？可创建工单联系平台人工客服。',!isAgent?'<button class="primary" id="create-ticket-toggle">＋ 新建咨询</button>':'<span class="pill">人工工单处理</span>')+
@@ -19,8 +22,13 @@ render.support=async function(){
      <div class="field full"><label>详细描述</label><textarea id="ticket-message" minlength="5" maxlength="2000" rows="4" required placeholder="请填写发生了什么，不要上传密码或敏感信息"></textarea></div>
      <div class="field full"><button type="submit" class="primary">提交咨询</button></div>
    </form></div>
-   <div class="support-layout"><div class="surface ticket-list"><div class="surface-title"><h3>${isAgent?'全部工单':'我的工单'}</h3><span class="account-note">最近100条 · ${tickets.length} 条</span></div><div class="ticket-scroll">${list||'<p class="empty">尚无客服工单</p>'}</div></div>
+   <div class="support-layout"><div class="surface ticket-list"><div class="surface-title"><h3>${isAgent?'全部工单':'我的工单'}</h3><span class="account-note">最近100条 · ${tickets.length} 条</span></div><div class="filters"><button class="filter active" type="button" data-ticket-filter="ALL">全部（${tickets.length}）</button><button class="filter" type="button" data-ticket-filter="OPEN">待处理（${pending}）</button><button class="filter" type="button" data-ticket-filter="IN_PROGRESS">处理中（${inProgress}）</button><button class="filter" type="button" data-ticket-filter="RESOLVED">已解决（${resolved}）</button></div><div class="ticket-scroll">${list||'<p class="empty">尚无客服工单</p>'}</div></div>
    <div id="ticket-detail" class="surface ticket-detail"><p class="empty">${tickets.length?'正在加载咨询详情…':'请创建工单开始咨询'}</p></div></div>`;
+  $('#support').querySelectorAll('[data-ticket-filter]').forEach(button=>button.onclick=()=>{
+    const filter=button.dataset.ticketFilter;
+    $('#support').querySelectorAll('[data-ticket-filter]').forEach(item=>item.classList.toggle('active',item===button));
+    $('#support').querySelectorAll('[data-ticket-id]').forEach(item=>item.hidden=filter!=='ALL'&&item.dataset.ticketStatus!==filter);
+  });
   if(!isAgent){
     $('#create-ticket-toggle').onclick=()=>{$('#new-ticket').hidden=!$('#new-ticket').hidden;if(!$('#new-ticket').hidden)$('#ticket-subject').focus()};
     $('#new-ticket-form').onsubmit=async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;try{const t=await api('/support/tickets','POST',{category:$('#ticket-category').value,subject:$('#ticket-subject').value,content:$('#ticket-message').value});state.selectedSupportId=t.id;toast('咨询工单已创建');await render.support()}catch(err){toast(err.message)}finally{b.disabled=false}};

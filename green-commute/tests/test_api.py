@@ -254,6 +254,15 @@ def test_inventory_adjustment_rejects_zero_and_overdraft(client):
     assert api(client,'post','/api/merchant/products/1/inventory',merchant,{
         'operation_id':'too-large-op','quantity':-41,'note':'超过现有库存'}).status_code==409
 
+def test_product_and_inventory_text_fields_reject_blank_values(client):
+    merchant=login(client,'merchant')
+    assert api(client,'post','/api/merchant/products',merchant,{
+        'name':'  ','description':'空白名称','category':'生活好物','icon':'gift','cost':5,'stock':1
+    }).status_code==422
+    assert api(client,'post','/api/merchant/products/1/inventory',merchant,{
+        'operation_id':'blank-note-op','quantity':1,'note':'  '
+    }).status_code==422
+
 def test_admin_can_create_merchant_and_filter_catalog(client):
     admin=login(client,'admin')
     created=api(client,'post','/api/admin/merchants',admin,{
