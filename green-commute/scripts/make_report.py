@@ -131,7 +131,7 @@ for i,(label,val) in enumerate(zip(labels,values)):
     for c in meta.rows[i].cells:
         for para in c.paragraphs:
             for r in para.runs:r.font.size=Pt(10)
-cover=p('提交说明：本报告包含可运行程序的实现说明、可编辑UML源码索引、实际执行的自动化测试结果及HTTP业务链证据；团队成员的真实协作和个人贡献须按实际补录。')
+cover=p('提交说明：本报告包含可运行程序的实现说明、可编辑UML源码索引及HTTP业务链说明；团队成员的真实协作和个人贡献须按实际补录。')
 cover.paragraph_format.space_before=Pt(20)
 for r in cover.runs:r.font.color.rgb=RGBColor(136,103,77)
 doc.add_page_break()
@@ -139,7 +139,7 @@ doc.add_page_break()
 doc.add_heading('摘  要',level=1)
 p('围绕城市碳中和主题，本项目开发一套可实际启动的绿色出行积分教学原型。居民可模拟上报出行数据，系统依据固定教学排放因子计算二氧化碳当量节约量，并将积分以交易台账形式发放；居民可兑换积分商城商品，商户可核销订单，管理员可查看运营统计并进行模拟积分清算。')
 p('技术实现采用 FastAPI、SQLAlchemy、SQLite（本地）/MySQL（部署示例），前端采用响应式单页界面；引入事务型Outbox实现行程积分发放及订单清算的事件解耦。核心积分以整数计量，余额与库存使用数据库条件更新保证事务一致性。')
-p('实际验证：16项pytest测试全部通过，另运行HTTP端到端业务链，保存真实API响应。限制：碳因子未经官方核证，未接入实际出行数据或支付；Docker环境与自动浏览器截图没有在本制作环境完成测试。')
+p('实际验证：项目保留HTTP端到端业务链的真实API响应；自动化测试结果不在本报告中统计。限制：碳因子未经官方核证，未接入实际出行数据或支付；Docker环境与自动浏览器截图没有在本制作环境完成测试。')
 p('关键词：绿色出行；软件工程；UML；敏捷开发；事务型Outbox；积分账本；FastAPI')
 doc.add_heading('报告目录',level=1)
 for chapter in ['一、实验一：需求分析与迭代规划','二、实验二：系统设计与技术选型','三、实验三：系统原型构建与实现','四、实验四：软件测试与部署','五、工程协作、AI使用与提交核对','附录：实际运行证据与模型目录']:
@@ -162,15 +162,12 @@ p('以下表格是课程互评模板，不代表本交付已经由4—5名学生
 table([['成员（真实姓名）','负责模块/任务','Git提交与PR证据','组内评分（待评）'],['组长：待填','待填','待填','待填'],['成员2：待填','待填','待填','待填'],['成员3：待填','待填','待填','待填'],['成员4：待填','待填','待填','待填'],['成员5（可选）','待填','待填','待填']])
 p('提交依据：Git仓库URL、真实commit哈希及时间、Sprint看板截图、同伴评语和任务验收记录。不得把AI生成的本地示例提交归功于虚构成员。')
 doc.add_heading('2. AI使用情况及后续人工审核计划',level=2)
-table([['开发环节','AI辅助内容（已发生）','已进行的机器验证','人工检查/修改（小组待填）'],['需求分析','功能点、用户故事及范围界定初稿','文档结构与代码对照','逐条复核需求'],['UML与设计','模型文字草图及PlantUML源文件','校对实体与数据库字段','人工审图并修订'],['代码实现','后端、前端和数据表原型','16项pytest通过、HTTP链实测','逐行审核核心逻辑、重构'],['测试','正向/反向/并发测试用例','pytest结果存档','补充遗漏场景及测试记录'],['部署与报告','说明文档及容器配置建议','本地API验证','部署到小组实际环境并记录截图']])
+table([['开发环节','AI辅助内容（已发生）','已进行的机器验证','人工检查/修改（小组待填）'],['需求分析','功能点、用户故事及范围界定初稿','文档结构与代码对照','逐条复核需求'],['UML与设计','模型文字草图及PlantUML源文件','校对实体与数据库字段','人工审图并修订'],['代码实现','后端、前端和数据表原型','HTTP链实测','逐行审核核心逻辑、重构'],['测试','正向/反向/并发测试用例','测试代码与用例设计','补充遗漏场景及测试记录'],['部署与报告','说明文档及容器配置建议','本地API验证','部署到小组实际环境并记录截图']])
 doc.add_heading('3. 最终验收与交付清单',level=2)
-for x in ['[已提供] 前后端可运行源码和静态资源','[已提供] 数据表与ORM结构及演示数据库','[已提供] 6份可编辑PlantUML模型与图示预览','[已提供] 敏捷Sprint计划、需求分析、设计说明、测试报告','[已提供] 16项自动测试与真实HTTP请求证据','[已提供] Dockerfile / Compose配置（未在本环境实际执行）','[需组员补全] 真实协作Git仓库及分工互评','[需组员补全] 实际Sprint评审与小组答辩记录']:
+for x in ['[已提供] 前后端可运行源码和静态资源','[已提供] 数据表与ORM结构及演示数据库','[已提供] 6份可编辑PlantUML模型与图示预览','[已提供] 敏捷Sprint计划、需求分析、设计说明','[已提供] 真实HTTP业务链证据','[已提供] Dockerfile / Compose配置（未在本环境实际执行）','[需组员补全] 真实协作Git仓库及分工互评','[需组员补全] 实际Sprint评审与小组答辩记录']:
     p('• '+x)
 doc.add_heading('附录：实际运行证据与模型目录',level=1)
-doc.add_heading('A. 自动化测试输出',level=2)
-for line in (ROOT/'docs/evidence/pytest-output.txt').read_text().splitlines():
-    doc.add_paragraph(line,style='Source Code')
-doc.add_heading('B. HTTP业务链测试数据',level=2)
+doc.add_heading('A. HTTP业务链测试数据',level=2)
 import json
 data=json.loads((ROOT/'docs/evidence/demo_flow.json').read_text(encoding='utf8'))
 rows=[['步骤','接口','HTTP状态']]
@@ -178,11 +175,11 @@ for e in data['steps']:
     rows.append([e['step'],e['method']+' '+e['path'],str(e['status'])])
 table(rows)
 p(f'实际本次模拟公交行程获得 {data["this_trip_issued"]} 积分，兑换支出 {data["this_redemption_cost"]} 积分；运行时账户余额 {data["balance_after"]} 分，当前账本记录累计差额 {data["ledger_net"]} 分。原始请求响应存储于 docs/evidence/demo_flow.json。运行时账户余额包含先前的演示操作，不能误读为单笔出行所得。')
-doc.add_heading('C. UML源文件索引',level=2)
+doc.add_heading('B. UML源文件索引',level=2)
 for f in sorted((ROOT/'docs/uml').glob('*.puml')):
     p('• docs/uml/'+f.name)
-doc.add_heading('D. 重要真实性说明',level=2)
-p('测试结论只描述本次本地执行结果，不能推断在线支付、真实碳核证、真实团队协作、Docker部署或生产级安全符合要求。对于课程最终验收，应安排各组员在自己的设备上运行、复测、审查、补全报告的个人贡献及使用情况。')
+doc.add_heading('C. 重要真实性说明',level=2)
+p('HTTP业务链说明只描述本次本地演示，不能推断在线支付、真实碳核证、真实团队协作、Docker部署或生产级安全符合要求。对于课程最终验收，应安排各组员在自己的设备上运行、复测、审查、补全报告的个人贡献及使用情况。')
 
 doc.core_properties.title='城市绿色出行积分系统—软件工程综合实验报告'
 doc.core_properties.subject='课程实验一至实验四：需求分析、系统设计、原型实现、测试部署'

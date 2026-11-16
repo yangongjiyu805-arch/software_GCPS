@@ -44,7 +44,7 @@ cd /d "%USERPROFILE%\Downloads\green-commute"
 set "AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1"
 set "AI_MODEL=qwen-plus"
 set "AI_LOCAL_NO_KEY=0"
-set "AI_API_KEY=sk-ws-H.PXMPDEL.TYCU.MEUCIQD-fPEml50HG4JRJlz4C5LtuIAemraDuJd-YHolS6ec8wIgYbazoIqyRjqJEQ_FXFxYCPiGDj-04i1xsxSNg6C14KE"
+set "AI_API_KEY=<YOUR_API_KEY>"
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
