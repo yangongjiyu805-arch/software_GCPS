@@ -2,6 +2,17 @@
 
 PRAGMA foreign_keys=ON;
 
+CREATE TABLE email_codes (
+	id INTEGER NOT NULL,
+	email VARCHAR(254) NOT NULL,
+	code_hash VARCHAR(64) NOT NULL,
+	attempts INTEGER NOT NULL,
+	expires_at DATETIME NOT NULL,
+	used_at DATETIME,
+	created_at DATETIME NOT NULL,
+	PRIMARY KEY (id)
+);
+
 CREATE TABLE emission_factors (
 	id INTEGER NOT NULL,
 	rule_id INTEGER NOT NULL,
@@ -189,6 +200,7 @@ CREATE TABLE trips (
 CREATE TABLE users (
 	id INTEGER NOT NULL,
 	username VARCHAR(48) NOT NULL,
+	email VARCHAR(254),
 	password_hash VARCHAR(200) NOT NULL,
 	display_name VARCHAR(80) NOT NULL,
 	role VARCHAR(15) NOT NULL,
@@ -198,6 +210,12 @@ CREATE TABLE users (
 	created_at DATETIME NOT NULL,
 	PRIMARY KEY (id)
 );
+
+CREATE INDEX ix_email_codes_email ON email_codes (email);
+
+CREATE INDEX ix_email_codes_expires_at ON email_codes (expires_at);
+
+CREATE INDEX ix_email_codes_created_at ON email_codes (created_at);
 
 CREATE INDEX ix_emission_factors_rule_id ON emission_factors (rule_id);
 
@@ -222,3 +240,7 @@ CREATE INDEX ix_trip_evidence_trip_id ON trip_evidence (trip_id);
 CREATE INDEX ix_trips_user_id ON trips (user_id);
 
 CREATE UNIQUE INDEX ix_users_username ON users (username);
+
+CREATE INDEX ix_users_email ON users (email);
+
+CREATE UNIQUE INDEX uq_users_email ON users (email);
