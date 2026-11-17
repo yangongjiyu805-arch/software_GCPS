@@ -146,7 +146,7 @@ for chapter in ['一、实验一：需求分析与迭代规划','二、实验二
     p(chapter)
 doc.add_page_break()
 
-chapters=[('01-需求分析与迭代规划.md',None),('02-系统设计与技术选型.md','design'),('03-原型构建与实现.md',None),('04-测试与部署.md',None)]
+chapters=[('01-需求分析与迭代规划.md',None),('02-系统设计与技术选型.md','design'),('03-原型构建与实现.md',None)]
 for fname,kind in chapters:
     from_md(ROOT/'docs'/fname)
     if kind=='design':
@@ -154,7 +154,7 @@ for fname,kind in chapters:
         picture(ROOT/'docs/figures/architecture-vertical.png',width=9.0,caption='图1  模块化后端与事件处理部署视图（结构化预览）')
         picture(ROOT/'docs/figures/entities-vertical.png',width=9.2,caption='图2  主要实体及关联关系（结构化预览）')
         p('说明：上述预览图由Graphviz绘制；符合UML表述的可编辑用例图、类图、时序图、状态图、组件图源文件位于 docs/uml/。')
-    if fname!='04-测试与部署.md':doc.add_page_break()
+    if fname!=chapters[-1][0]:doc.add_page_break()
 
 doc.add_heading('五、工程协作、AI使用与提交核对',level=1)
 doc.add_heading('1. 真实团队分工与Git记录（提交前必填）',level=2)

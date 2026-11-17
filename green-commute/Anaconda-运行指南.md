@@ -48,7 +48,7 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 首次启动时使用上面的 `create_admin` 命令创建管理员。已有管理员时可跳过该命令。居民从网页注册，商户由管理员创建。默认使用 SQLite，数据库首次启动时初始化结构和基础排放规则。
 
-需要在本机跑旧演示脚本时，先切换到单独的测试库，设置 `set "DATABASE_URL=sqlite:///./greengo-demo.db"` 和 `set "SEED_DEMO_DATA=1"`，再启动服务。空库才会加载 `resident`、`merchant`、`admin`（默认密码 `Demo@123456`）及测试商品。详见 [启动与升级](README.md#1-启动与首次管理员)。
+需要课堂演示数据时，先切换到单独的测试库，设置 `set "DATABASE_URL=sqlite:///./greengo-demo.db"` 和 `set "SEED_DEMO_DATA=1"`，再启动服务。空库才会加载 `resident`、`merchant`、`admin`（默认密码 `Demo@123456`）及测试商品。详见 [启动与升级](README.md#1-启动与首次管理员)。
 
 停止运行：按 **Ctrl+C**。
 
@@ -64,19 +64,7 @@ python -m pytest -q tests
 
 若你使用了其他路径，请将 `cd` 行改成自己的项目路径。测试使用临时数据库，不会修改演示数据库。
 
-## 4. 真实接口业务流程验证
-
-**保持第一个 Anaconda Prompt 的服务运行**；另开第二个 Anaconda Prompt，进入项目目录、激活环境并执行：
-
-```bat
-cd /d "%USERPROFILE%\Downloads\green-commute"
-conda activate greengo
-python scripts/demo_flow.py
-```
-
-该脚本会真实地使用 HTTP 请求完成：居民登录 → 上报30km公交 → 兑换商品 → 商户核销 → 管理员清算 → 查看积分流水，生成 `docs/evidence/demo_flow.json`。它会修改当前演示数据库，所以运行后余额及库存会变化。脚本默认监听本地8000端口。
-
-## 5. Git 版本控制
+## 4. Git 版本控制
 
 Git 命令同样在 Anaconda Prompt 运行：
 
@@ -105,7 +93,7 @@ git commit -m "完成个人负责的功能或测试"
 
 提交前先查看 `git status` 和 `git diff`，避免把不需要的文件提交。压缩包里已有 `.git` 历史，仅属于已有的项目制作记录，不能冒充4—5位组员的真实协作记录。
 
-## 6. 可选：重新生成 Word 实验报告
+## 5. 可选：重新生成 Word 实验报告
 
 环境配置包括 `python-docx`，无需切换终端：
 
@@ -117,7 +105,7 @@ python scripts/make_report.py
 
 Word 文件输出在 `green-commute` 的上级文件夹，生成后仍需用 Office/WPS 人工审阅并填写实际小组成员、AI使用与分工情况。PDF转换可在 Office/WPS 中导出。
 
-## 7. 常见问题
+## 6. 常见问题
 
 - `conda 不是内部或外部命令`：请确认打开的是 **Anaconda Prompt**，不是普通 CMD。首次使用时可执行 `conda --version`。
 - `EnvironmentNameNotFound`：还没有创建环境；回到项目目录执行 `conda env create -f environment.yml`。
