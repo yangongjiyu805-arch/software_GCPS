@@ -143,7 +143,7 @@ app/
 scripts/
   worker.py      Outbox 消费进程
 tests/          pytest 集成/业务规则测试
-docs/           实验说明及新增模块设计、UML源文件、运行证据
+docs/           实验说明及新增模块设计、UML源文件、接口与数据库结构
 Dockerfile, docker-compose.yml, .github/workflows/tests.yml
 ```
 
