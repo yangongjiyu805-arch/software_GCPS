@@ -1,7 +1,5 @@
 > **2026-10-20 新增：客服中心 + AI 绿色出行助手。** 普通用户/商户可创建客服工单，管理员可查看、回复与更新状态；所有对话保存在数据库中，用户只能查看自己的工单。AI 页面支持真实 OpenAI 兼容模型接口，必须配置服务端 API Key 和模型名称，否则明确显示“未配置”，右侧 FAQ 仍可使用。请先看 [《客服与AI功能操作指南》](客服与AI功能操作指南.md)。
 
-> **2026-10-20 登录页面修复：** 修复登录成功后登录界面仍然显示（CSS `display:grid` 覆盖 `hidden`），并修复商户/管理员登录后退出按钮未显示。新增前端显示控制回归测试，浏览器 DOM 交互使用模拟 API 验证了三个角色的登录/退出显示状态。详见 `登录显示修复说明.md`。
-
 > **个人信息入口：** 登录后右上角头像和账号标识可点击进入「个人信息」页面，查看账号编号、登录用户名、绑定邮箱、角色、账号状态和居民积分，并可从页面返回对应工作台或退出登录。
 
 # 青行 GreenGo — 城市绿色出行积分系统
@@ -90,11 +88,7 @@ systemctl start greengo.service greengo-worker.service
 
 ```bash
 python -m pytest -q tests
-# 可选接口演练。在独立测试库启用 SEED_DEMO_DATA=1 后启动网页服务。
-python scripts/demo_flow.py  # 默认连接本地8000端口
 ```
-
-可选的浏览器截图脚本 `python scripts/capture_ui.py` 使用同一测试服务，需要安装 Playwright 和 Chromium。可通过 `DEMO_CHROMIUM_PATH` 指定本机的 Chromium 或 Edge 程序路径。
 
 测试覆盖多账号隔离、会话撤销、商品与订单归属、品类迁移、日期筛选、库存及积分交易和客服与 AI 接口。默认使用独立临时 SQLite 数据库。也可将 `GREENGO_TEST_DATABASE_URL` 指向专门创建的 MySQL 测试库，库名须以 `greengo_test_` 开头。测试会重建该库的项目表。
 
@@ -110,8 +104,6 @@ docker compose up -d
 ```
 
 `web` 默认绑定到本机 `127.0.0.1:8000`，可接入 HTTPS 反向代理。`worker` 轮询待处理事件。首次安装创建管理员一次，已有正式管理员的升级可跳过创建。数据库使用 `mysql_data` 持久卷。
-
-可选的浏览器UI截图脚本需另外安装 `pip install -r requirements-ui.txt`、`playwright install chromium`，然后运行 `python scripts/capture_ui.py`。本制作环境存在浏览器URL访问限制，未生成真实浏览器截图。
 
 ## 6. 接口要点
 
@@ -150,10 +142,8 @@ app/
   static/        完整可操作的响应式网页
 scripts/
   worker.py      Outbox 消费进程
-  demo_flow.py   实际API端到端演示记录
-  capture_ui.py  浏览器截图脚本（受浏览器策略约束）
 tests/          pytest 集成/业务规则测试
-docs/           实验说明及新增模块设计、UML源文件、运行证据
+docs/           实验说明及新增模块设计、UML源文件、接口与数据库结构
 Dockerfile, docker-compose.yml, .github/workflows/tests.yml
 ```
 
